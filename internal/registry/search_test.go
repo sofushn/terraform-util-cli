@@ -137,8 +137,8 @@ func TestListProviderDocsReturnsSupportedDocs(t *testing.T) {
 			}
 			w.Write([]byte(`{
 				"included": [
-					{"type":"provider-docs","id":"1","attributes":{"category":"resources","language":"hcl","path":"website/docs/r/vpc.html.markdown","slug":"vpc","title":"aws_vpc"}},
-					{"type":"provider-docs","id":"2","attributes":{"category":"data-sources","language":"hcl","path":"website/docs/d/ami.html.markdown","slug":"ami","title":"aws_ami"}},
+					{"type":"provider-docs","id":"1","attributes":{"category":"resources","language":"hcl","path":"website/docs/r/vpc.html.markdown","slug":"vpc","title":"vpc"}},
+					{"type":"provider-docs","id":"2","attributes":{"category":"data-sources","language":"hcl","path":"website/docs/d/ami.html.markdown","slug":"ami","title":"ami"}},
 					{"type":"provider-docs","id":"3","attributes":{"category":"guides","language":"hcl","path":"website/docs/guides/example.html.markdown","slug":"example","title":"Example"}}
 				]
 			}`))
@@ -187,12 +187,12 @@ func TestGetProviderDocFetchesContentAndSource(t *testing.T) {
 			}
 			w.Write([]byte(`{
 				"data": [
-					{"type":"provider-docs","id":"123","attributes":{"category":"resources","language":"hcl","path":"website/docs/r/vpc.html.markdown","slug":"vpc","title":"aws_vpc"}}
+					{"type":"provider-docs","id":"123","attributes":{"category":"resources","language":"hcl","path":"website/docs/r/vpc.html.markdown","slug":"vpc","title":"vpc"}}
 				]
 			}`))
 		case "/v2/provider-docs/123":
 			w.Write([]byte(`{
-				"data": {"type":"provider-docs","id":"123","attributes":{"category":"resources","content":"---\npage_title: AWS VPC\n---\n\n# Resource: aws_vpc\n","language":"hcl","path":"website/docs/r/vpc.html.markdown","slug":"vpc","title":"aws_vpc"}}
+				"data": {"type":"provider-docs","id":"123","attributes":{"category":"resources","content":"---\npage_title: AWS VPC\n---\n\n# Resource: aws_vpc\n","language":"hcl","path":"website/docs/r/vpc.html.markdown","slug":"vpc","title":"vpc"}}
 			}`))
 		default:
 			http.NotFound(w, r)

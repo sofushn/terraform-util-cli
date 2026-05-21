@@ -224,6 +224,7 @@ With `--verbose`, include provider metadata before the list:
 ```text
 Provider: registry.terraform.io/hashicorp/aws
 Version: 6.0.0
+Website: https://registry.terraform.io/providers/hashicorp/aws/6.0.0
 
 resource/aws_vpc
 data/aws_vpc
@@ -263,6 +264,7 @@ Verbose example output:
 ```text
 Provider: registry.terraform.io/hashicorp/aws
 Version: 6.0.0
+Website: https://registry.terraform.io/providers/hashicorp/aws/6.0.0
 Doc: resource/aws_vpc
 Source: https://registry.terraform.io/providers/hashicorp/aws/6.0.0/docs/resources/vpc
 
@@ -271,7 +273,7 @@ Source: https://registry.terraform.io/providers/hashicorp/aws/6.0.0/docs/resourc
 ...
 ```
 
-For LLM usage, agents that need citation metadata should pass `--verbose` so the output contains the provider version and source URL.
+For LLM usage, agents that need citation metadata should pass `--verbose` so the output contains the provider version, provider website URL, and source URL.
 
 ## Registry Integration
 

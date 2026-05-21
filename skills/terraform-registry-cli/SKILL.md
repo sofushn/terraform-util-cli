@@ -112,7 +112,7 @@ terraform-registry docs hashicorp/aws data/aws_ami
 terraform-registry docs aws function/arn_parse
 ```
 
-Default docs output is the markdown-like documentation body only. Use `--verbose` when you need provider, version, doc path, and source URL metadata:
+Default docs output is the markdown-like documentation body only. Use `--verbose` when you need provider, version, Terraform Registry website URL, doc path, and source URL metadata:
 
 ```sh
 terraform-registry --verbose docs aws resource/aws_vpc

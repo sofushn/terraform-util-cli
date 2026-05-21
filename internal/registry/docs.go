@@ -45,7 +45,7 @@ func (c Client) ListProviderDocs(ctx context.Context, provider Provider) ([]DocI
 
 	items := make([]DocItem, 0, len(response.Included))
 	for _, doc := range response.Included {
-		item, ok := docItemFromAttributes(doc.Attributes)
+		item, ok := docItemFromAttributes(provider.Name, doc.Attributes)
 		if ok {
 			items = append(items, item)
 		}
@@ -77,7 +77,7 @@ func (c Client) GetProviderDoc(ctx context.Context, provider Provider, kind stri
 		return DocPage{}, err
 	}
 
-	item, ok := docItemFromAttributes(page.Data.Attributes)
+	item, ok := docItemFromAttributes(provider.Name, page.Data.Attributes)
 	if !ok {
 		return DocPage{}, fmt.Errorf("provider doc %q is not a supported docs type", name)
 	}
@@ -189,7 +189,7 @@ func (c Client) providerVersionID(ctx context.Context, namespace string, name st
 	return "", "", fmt.Errorf("provider version %s/%s %q not found", namespace, name, version)
 }
 
-func docItemFromAttributes(attrs v2ProviderDocAttributes) (DocItem, bool) {
+func docItemFromAttributes(providerName string, attrs v2ProviderDocAttributes) (DocItem, bool) {
 	kind, ok := docsKind(attrs.Category)
 	if !ok || attrs.Language != "hcl" {
 		return DocItem{}, false
@@ -197,7 +197,7 @@ func docItemFromAttributes(attrs v2ProviderDocAttributes) (DocItem, bool) {
 
 	return DocItem{
 		Kind:  kind,
-		Name:  canonicalDocName(kind, attrs.Title, attrs.Slug),
+		Name:  canonicalDocName(providerName, kind, attrs.Title, attrs.Slug),
 		Title: attrs.Title,
 		Path:  attrs.Path,
 		Slug:  attrs.Slug,
@@ -230,11 +230,15 @@ func docsKind(category string) (string, bool) {
 	}
 }
 
-func canonicalDocName(kind string, title string, slug string) string {
-	if strings.TrimSpace(title) != "" {
-		return title
+func canonicalDocName(providerName string, kind string, title string, slug string) string {
+	name := strings.TrimSpace(title)
+	if name == "" {
+		name = slug
 	}
-	return slug
+	if (kind == "resource" || kind == "data") && name != providerName && !strings.HasPrefix(name, providerName+"_") {
+		return providerName + "_" + name
+	}
+	return name
 }
 
 func candidateSlugs(providerName string, name string) []string {

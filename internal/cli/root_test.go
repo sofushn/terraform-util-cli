@@ -510,12 +510,31 @@ func TestDocsVerboseOutputIncludesMetadata(t *testing.T) {
 	for _, want := range []string{
 		"Provider: registry.terraform.io/hashicorp/aws",
 		"Version: 6.46.0",
+		"Website: https://registry.terraform.io/providers/hashicorp/aws/6.46.0",
 		"Doc: resource/aws_vpc",
 		"Source: https://github.com/hashicorp/terraform-provider-aws/blob/v6.46.0/website/docs/r/vpc.html.markdown",
 		"# Resource: aws_vpc",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("expected verbose docs output to contain %q, got:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestDocsListVerboseOutputIncludesProviderWebsite(t *testing.T) {
+	stdout, _, err := execute("--verbose", "docs", "list", "aws", "vpc")
+	if err != nil {
+		t.Fatalf("expected docs list to succeed: %v", err)
+	}
+
+	for _, want := range []string{
+		"Provider: registry.terraform.io/hashicorp/aws",
+		"Version: 6.46.0",
+		"Website: https://registry.terraform.io/providers/hashicorp/aws/6.46.0",
+		"resource/aws_vpc",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected verbose docs list output to contain %q, got:\n%s", want, stdout)
 		}
 	}
 }

@@ -289,8 +289,8 @@ func printChangedFiles(w io.Writer, changedFiles []string) {
 
 func printDocList(w io.Writer, items []app.DocItem, verbose bool) {
 	if verbose && len(items) > 0 {
-		fmt.Fprintf(w, "Provider: %s\n", items[0].Provider.Source)
-		fmt.Fprintf(w, "Version: %s\n\n", items[0].Provider.LatestVersion)
+		printProviderMetadata(w, items[0].Provider)
+		fmt.Fprintln(w)
 	}
 
 	for _, item := range items {
@@ -300,8 +300,7 @@ func printDocList(w io.Writer, items []app.DocItem, verbose bool) {
 
 func printDocPage(w io.Writer, page app.DocPage, verbose bool) {
 	if verbose {
-		fmt.Fprintf(w, "Provider: %s\n", page.Provider.Source)
-		fmt.Fprintf(w, "Version: %s\n", page.Provider.LatestVersion)
+		printProviderMetadata(w, page.Provider)
 		fmt.Fprintf(w, "Doc: %s/%s\n", page.Kind, page.Name)
 		if page.Source != "" {
 			fmt.Fprintf(w, "Source: %s\n", page.Source)
@@ -310,6 +309,29 @@ func printDocPage(w io.Writer, page app.DocPage, verbose bool) {
 	}
 
 	fmt.Fprintln(w, page.Content)
+}
+
+func printProviderMetadata(w io.Writer, provider app.Provider) {
+	fmt.Fprintf(w, "Provider: %s\n", provider.Source)
+	fmt.Fprintf(w, "Version: %s\n", provider.LatestVersion)
+	if website := providerWebsiteURL(provider); website != "" {
+		fmt.Fprintf(w, "Website: %s\n", website)
+	}
+}
+
+func providerWebsiteURL(provider app.Provider) string {
+	source := strings.TrimPrefix(provider.Source, "registry.terraform.io/")
+	parts := strings.Split(source, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return ""
+	}
+
+	version := provider.LatestVersion
+	if strings.TrimSpace(version) == "" {
+		version = "latest"
+	}
+
+	return fmt.Sprintf("https://registry.terraform.io/providers/%s/%s/%s", parts[0], parts[1], version)
 }
 
 func printProviderSearchResults(w io.Writer, providers []app.Provider, verbose bool) {
