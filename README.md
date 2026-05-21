@@ -2,8 +2,6 @@
 
 CLI for Terraform Registry documentation and provider helpers.
 
-Current status: `search` queries the Terraform Registry, and project commands (`add`, `remove`, `update`) edit local `.tf` files. Docs fetching is not implemented yet, so `docs` commands still print deterministic placeholder output.
-
 ## Requirements
 
 - Go 1.22 or newer
