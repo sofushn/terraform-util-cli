@@ -2,7 +2,7 @@
 .agents/
 
 # Built CLI binary
-terraform-registry
+terraform-util
 
 # Go build and release outputs
 dist/

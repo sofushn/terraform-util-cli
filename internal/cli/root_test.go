@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"terraform-registry-cli/internal/app"
+	"terraform-util/internal/app"
 )
 
 var errFakeService = errors.New("service failed")
@@ -95,7 +95,7 @@ func TestRootHelpWorks(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"terraform-registry",
+		"terraform-util",
 		"Registry Commands",
 		"Terraform Project Commands",
 		"search",
@@ -361,7 +361,7 @@ func TestInvalidArgsShowCommandHelp(t *testing.T) {
 	for _, want := range []string{
 		"accepts 1 arg(s), received 0",
 		"Usage:",
-		"terraform-registry search <provider>",
+		"terraform-util search <provider>",
 	} {
 		if !strings.Contains(stderr, want) {
 			t.Fatalf("expected stderr to contain %q, got:\n%s", want, stderr)

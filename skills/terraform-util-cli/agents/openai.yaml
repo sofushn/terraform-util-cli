@@ -1,0 +1,4 @@
+interface:
+  display_name: "Terraform Util"
+  short_description: "Use Terraform Registry docs from terraform-util"
+  default_prompt: "Use $terraform-util to find current Terraform provider docs."

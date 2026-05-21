@@ -1,4 +1,4 @@
-module terraform-registry-cli
+module terraform-util
 
 go 1.22
 

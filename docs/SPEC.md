@@ -1,8 +1,8 @@
-# Terraform Registry CLI Implementation Spec
+# Terraform Util Implementation Spec
 
 ## Overview
 
-`terraform-registry` is a command-line tool for searching Terraform Registry providers, listing their available documentation, fetching current provider docs, and safely editing Terraform configuration files to add, remove, or update provider requirements.
+`terraform-util` is a command-line tool for searching Terraform Registry providers, listing their available documentation, fetching current provider docs, and safely editing Terraform configuration files to add, remove, or update provider requirements.
 
 The primary user is an LLM agent that needs reliable, current Terraform documentation without relying on stale training data. Human users should also be able to use the CLI directly.
 
@@ -26,18 +26,18 @@ The primary user is an LLM agent that needs reliable, current Terraform document
 The executable name should be:
 
 ```sh
-terraform-registry
+terraform-util
 ```
 
 ### Commands
 
 ```sh
-terraform-registry search <provider>
-terraform-registry add <provider>
-terraform-registry remove <provider>
-terraform-registry update <provider>
-terraform-registry docs list <provider> [keyword]
-terraform-registry docs <provider> <data|resource|function>/<name>
+terraform-util search <provider>
+terraform-util add <provider>
+terraform-util remove <provider>
+terraform-util update <provider>
+terraform-util docs list <provider> [keyword]
+terraform-util docs <provider> <data|resource|function>/<name>
 ```
 
 ### Global Options
@@ -82,7 +82,7 @@ Search the Terraform Registry for matching providers.
 Example:
 
 ```sh
-terraform-registry search aws
+terraform-util search aws
 ```
 
 Example output:
@@ -199,7 +199,7 @@ Recommended behavior:
 Future option:
 
 ```sh
-terraform-registry update aws --version "~> 6.0"
+terraform-util update aws --version "~> 6.0"
 ```
 
 ### `docs list <provider> [keyword]`
@@ -209,7 +209,7 @@ List available resources, data sources, and functions for a provider.
 Example:
 
 ```sh
-terraform-registry docs list aws vpc
+terraform-util docs list aws vpc
 ```
 
 Example output:
@@ -239,8 +239,8 @@ Fetch the documentation page for a specific item.
 Examples:
 
 ```sh
-terraform-registry docs aws resource/aws_vpc
-terraform-registry docs hashicorp/aws data/aws_ami
+terraform-util docs aws resource/aws_vpc
+terraform-util docs hashicorp/aws data/aws_ami
 ```
 
 Expected behavior:
@@ -495,4 +495,4 @@ The first version may defer:
 - Provider docs full-text search.
 - Local vector or SQLite index for docs.
 - MCP server mode for direct agent integration.
-- `terraform-registry explain <address>` to fetch docs for Terraform addresses like `aws_vpc.main`.
+- `terraform-util explain <address>` to fetch docs for Terraform addresses like `aws_vpc.main`.

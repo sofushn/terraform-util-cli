@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"terraform-registry-cli/internal/project"
-	"terraform-registry-cli/internal/registry"
+	"terraform-util/internal/project"
+	"terraform-util/internal/registry"
 )
 
 type Provider struct {

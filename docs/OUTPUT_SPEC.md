@@ -1,8 +1,8 @@
-# Terraform Registry CLI Output Spec
+# Terraform Util Output Spec
 
 ## Overview
 
-This document defines optional structured output formats for `terraform-registry`.
+This document defines optional structured output formats for `terraform-util`.
 
 The main implementation spec keeps the default CLI output plain and human-readable. This spec captures richer JSON and Markdown-style contracts for future agent integrations, tests, and compatibility guarantees.
 
@@ -25,7 +25,7 @@ Recommended behavior:
 Command:
 
 ```sh
-terraform-registry search aws --format json
+terraform-util search aws --format json
 ```
 
 Output:
@@ -53,7 +53,7 @@ Output:
 Command:
 
 ```sh
-terraform-registry docs list aws vpc --format json
+terraform-util docs list aws vpc --format json
 ```
 
 Output:
@@ -85,7 +85,7 @@ Output:
 Command:
 
 ```sh
-terraform-registry docs hashicorp/aws resource/aws_vpc --format markdown
+terraform-util docs hashicorp/aws resource/aws_vpc --format markdown
 ```
 
 Output:

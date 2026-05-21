@@ -1,11 +1,11 @@
 ---
-name: terraform-registry-cli
-description: Use when an agent needs current Terraform Registry provider information or docs through the local terraform-registry CLI, or needs to add, update, or remove providers in the current Terraform project.
+name: terraform-util
+description: Use when an agent needs current Terraform Registry provider information or docs through the local terraform-util CLI, or needs to add, update, or remove providers in the current Terraform project.
 ---
 
-# Terraform Registry CLI
+# Terraform Util
 
-Use `terraform-registry` to search the official Terraform Registry, fetch current provider docs, and edit provider requirements in local `.tf` files.
+Use `terraform-util` to search the official Terraform Registry, fetch current provider docs, and edit provider requirements in local `.tf` files.
 
 The CLI is designed for agents: prefer it over relying on stale Terraform provider knowledge.
 
@@ -14,23 +14,23 @@ The CLI is designed for agents: prefer it over relying on stale Terraform provid
 From this repository, build or install the CLI when it is not already on `PATH`:
 
 ```sh
-go build -o terraform-registry ./cmd/terraform-registry
-./terraform-registry --help
+go build -o terraform-util ./cmd/terraform-util
+./terraform-util --help
 ```
 
 Or install it into the Go bin directory:
 
 ```sh
-go install ./cmd/terraform-registry
-terraform-registry --help
+go install ./cmd/terraform-util
+terraform-util --help
 ```
 
-If running from the repo without installing, use `./terraform-registry`. Otherwise use `terraform-registry`.
+If running from the repo without installing, use `./terraform-util`. Otherwise use `terraform-util`.
 
 ## Command Tree
 
 ```text
-terraform-registry
+terraform-util
 |-- search <provider>
 |-- docs
 |   |-- list <provider> [keyword]
@@ -66,8 +66,8 @@ For short names, the CLI resolves against the official registry. If multiple pro
 Use search before choosing a provider:
 
 ```sh
-terraform-registry search aws
-terraform-registry --verbose search aws
+terraform-util search aws
+terraform-util --verbose search aws
 ```
 
 Default output columns are stable-width:
@@ -91,9 +91,9 @@ Only verified providers display `verified`; unverified providers have an empty v
 List available resources, data sources, and functions:
 
 ```sh
-terraform-registry docs list aws
-terraform-registry docs list aws vpc
-terraform-registry --verbose docs list aws vpc
+terraform-util docs list aws
+terraform-util docs list aws vpc
+terraform-util --verbose docs list aws vpc
 ```
 
 Default list output is one docs path per line:
@@ -107,22 +107,22 @@ function/arn_parse
 Fetch a specific docs page:
 
 ```sh
-terraform-registry docs aws resource/aws_vpc
-terraform-registry docs hashicorp/aws data/aws_ami
-terraform-registry docs aws function/arn_parse
+terraform-util docs aws resource/aws_vpc
+terraform-util docs hashicorp/aws data/aws_ami
+terraform-util docs aws function/arn_parse
 ```
 
 Default docs output is the markdown-like documentation body only. Use `--verbose` when you need provider, version, Terraform Registry website URL, doc path, and source URL metadata:
 
 ```sh
-terraform-registry --verbose docs aws resource/aws_vpc
+terraform-util --verbose docs aws resource/aws_vpc
 ```
 
 Agent pattern:
 
 ```sh
-terraform-registry docs list aws vpc
-terraform-registry docs aws resource/aws_vpc
+terraform-util docs list aws vpc
+terraform-util docs aws resource/aws_vpc
 ```
 
 Use `docs list` first when you are unsure of the exact docs path. Resource and data source docs usually use Terraform type names such as `resource/aws_vpc` and `data/aws_ami`.
@@ -134,8 +134,8 @@ Project commands operate on `.tf` files in the current working directory. Run th
 Add a provider:
 
 ```sh
-terraform-registry add aws
-terraform-registry add aws --version "~> 6.0"
+terraform-util add aws
+terraform-util add aws --version "~> 6.0"
 ```
 
 When `--version` is omitted, the CLI resolves and writes the latest provider version. `add` verifies the provider against the registry, updates `required_providers`, and creates a basic `provider "<name>" {}` block if needed.
@@ -143,8 +143,8 @@ When `--version` is omitted, the CLI resolves and writes the latest provider ver
 Update a provider version:
 
 ```sh
-terraform-registry update aws
-terraform-registry update aws --version "~> 6.1"
+terraform-util update aws
+terraform-util update aws --version "~> 6.1"
 ```
 
 When `--version` is omitted, the CLI resolves and writes the latest provider version. `update` verifies the provider against the registry and requires the provider to already exist in `required_providers`.
@@ -152,7 +152,7 @@ When `--version` is omitted, the CLI resolves and writes the latest provider ver
 Remove a provider:
 
 ```sh
-terraform-registry remove aws
+terraform-util remove aws
 ```
 
 `remove` is intentionally local-only and does not verify against the registry. This allows removing stale or unpublished provider entries.
@@ -160,7 +160,7 @@ terraform-registry remove aws
 Safety checklist for agents:
 
 ```sh
-terraform-registry add aws
+terraform-util add aws
 git diff -- '*.tf'
 go test ./...
 ```
@@ -172,8 +172,8 @@ Do not run project commands from a parent directory unless the user explicitly w
 Invalid command shapes print help and return a nonzero exit code. If a docs path fails, list docs with a keyword and retry with the exact path:
 
 ```sh
-terraform-registry docs list aws ami
-terraform-registry docs aws data/aws_ami
+terraform-util docs list aws ami
+terraform-util docs aws data/aws_ami
 ```
 
 Use `--quiet` only when another workflow already confirms success through exit codes or file diffs.

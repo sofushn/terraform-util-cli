@@ -1,4 +1,4 @@
-# terraform-registry-cli
+# terraform-util
 
 CLI for Terraform Registry documentation and provider helpers.
 
@@ -11,26 +11,26 @@ CLI for Terraform Registry documentation and provider helpers.
 From the repository root:
 
 ```sh
-go build -o terraform-registry ./cmd/terraform-registry
+go build -o terraform-util ./cmd/terraform-util
 ```
 
 Run the built CLI:
 
 ```sh
-./terraform-registry --help
+./terraform-util --help
 ```
 
 ## Try the CLI
 
 ```sh
-./terraform-registry search aws
-./terraform-registry add aws
-./terraform-registry remove aws
-./terraform-registry update aws
-./terraform-registry update aws --version "~> 6.1"
-./terraform-registry docs list aws
-./terraform-registry docs list aws vpc
-./terraform-registry docs aws resource/aws_vpc
+./terraform-util search aws
+./terraform-util add aws
+./terraform-util remove aws
+./terraform-util update aws
+./terraform-util update aws --version "~> 6.1"
+./terraform-util docs list aws
+./terraform-util docs list aws vpc
+./terraform-util docs aws resource/aws_vpc
 ```
 
 ## Test
@@ -44,11 +44,11 @@ go test ./...
 To install the binary into your Go bin directory:
 
 ```sh
-go install ./cmd/terraform-registry
+go install ./cmd/terraform-util
 ```
 
 Make sure your Go bin directory is on your `PATH`, then run:
 
 ```sh
-terraform-registry --help
+terraform-util --help
 ```

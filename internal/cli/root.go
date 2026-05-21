@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"terraform-registry-cli/internal/app"
+	"terraform-util/internal/app"
 
 	"github.com/spf13/cobra"
 )
@@ -30,7 +30,7 @@ type dependencies struct {
 	service service
 }
 
-// NewRootCommand builds the terraform-registry command tree.
+// NewRootCommand builds the terraform-util command tree.
 func NewRootCommand() *cobra.Command {
 	return newRootCommand(dependencies{service: app.NewDefaultService()})
 }
@@ -39,7 +39,7 @@ func newRootCommand(deps dependencies) *cobra.Command {
 	opts := &options{}
 
 	rootCmd := &cobra.Command{
-		Use:           "terraform-registry",
+		Use:           "terraform-util",
 		Short:         "Search Terraform Registry providers and docs",
 		SilenceErrors: true,
 		SilenceUsage:  true,
