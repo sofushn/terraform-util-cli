@@ -43,6 +43,7 @@ func execute(args ...string) (string, string, error) {
 			Name:     "aws_vpc",
 			Content:  "# Resource: aws_vpc",
 			Source:   "https://github.com/hashicorp/terraform-provider-aws/blob/v6.46.0/website/docs/r/vpc.html.markdown",
+			Website:  "https://registry.terraform.io/providers/hashicorp/aws/6.46.0/docs/resources/vpc",
 		},
 	}, args...)
 }
@@ -101,7 +102,7 @@ func TestRootHelpWorks(t *testing.T) {
 		"search",
 		"docs",
 		"add",
-		"--verbose",
+		"--details",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("expected help output to contain %q, got:\n%s", want, stdout)
@@ -113,6 +114,7 @@ func TestRootHelpWorks(t *testing.T) {
 		"--cache-dir",
 		"--no-cache",
 		"--registry-url",
+		"--verbose",
 		"help        Help about any command",
 	} {
 		if strings.Contains(stdout, unwanted) {
@@ -169,14 +171,14 @@ func TestSearchCommandPrintsRegistryResults(t *testing.T) {
 	}
 
 	want := "provider                  name    version  verified\n" +
-		"hashicorp/aws             aws     6.46.0   verified\n" +
+		"hashicorp/aws             aws     6.46.0   true    \n" +
 		"verylongnamespace/custom  Custom  1.0.0            \n"
 	if stdout != want {
 		t.Fatalf("unexpected stdout:\nwant: %q\n got: %q", want, stdout)
 	}
 }
 
-func TestSearchCommandVerbosePrintsDownloads(t *testing.T) {
+func TestSearchCommandDetailsPrintsDownloads(t *testing.T) {
 	svc := fakeService{providers: []app.Provider{{
 		Namespace:     "hashicorp",
 		Name:          "aws",
@@ -186,13 +188,13 @@ func TestSearchCommandVerbosePrintsDownloads(t *testing.T) {
 		Downloads:     500,
 	}}}
 
-	stdout, _, err := executeWithService(svc, "--verbose", "search", "aws")
+	stdout, _, err := executeWithService(svc, "--details", "search", "aws")
 	if err != nil {
 		t.Fatalf("expected search to succeed: %v", err)
 	}
 
 	want := "provider       name  version  downloads  verified\n" +
-		"hashicorp/aws  aws   6.46.0   500        verified\n"
+		"hashicorp/aws  aws   6.46.0   500        true    \n"
 	if stdout != want {
 		t.Fatalf("unexpected stdout:\nwant: %q\n got: %q", want, stdout)
 	}
@@ -456,7 +458,7 @@ func TestGlobalFlagsParse(t *testing.T) {
 	}}}
 
 	stdout, _, err := executeWithService(svc,
-		"--verbose",
+		"--details",
 		"search",
 		"aws",
 	)
@@ -464,8 +466,25 @@ func TestGlobalFlagsParse(t *testing.T) {
 		t.Fatalf("expected command with global flags to succeed: %v", err)
 	}
 
-	if stdout != "provider       name  version  downloads  verified\nhashicorp/aws  aws   6.46.0   500        verified\n" {
+	if stdout != "provider       name  version  downloads  verified\nhashicorp/aws  aws   6.46.0   500        true    \n" {
 		t.Fatalf("unexpected stdout: %q", stdout)
+	}
+}
+
+func TestDetailsShorthandParses(t *testing.T) {
+	stdout, _, err := execute("-d", "search", "aws")
+	if err != nil {
+		t.Fatalf("expected -d to parse: %v", err)
+	}
+	if !strings.Contains(stdout, "downloads") {
+		t.Fatalf("expected details output, got:\n%s", stdout)
+	}
+}
+
+func TestVerboseFlagIsRejected(t *testing.T) {
+	_, _, err := execute("--verbose", "search", "aws")
+	if err == nil {
+		t.Fatalf("expected --verbose to fail")
 	}
 }
 
@@ -501,8 +520,8 @@ func TestCommandSpecificFutureFlagsParse(t *testing.T) {
 	}
 }
 
-func TestDocsVerboseOutputIncludesMetadata(t *testing.T) {
-	stdout, _, err := execute("--verbose", "docs", "aws", "resource/aws_vpc")
+func TestDocsDetailsOutputIncludesMetadata(t *testing.T) {
+	stdout, _, err := execute("--details", "docs", "aws", "resource/aws_vpc")
 	if err != nil {
 		t.Fatalf("expected docs path to succeed: %v", err)
 	}
@@ -510,19 +529,19 @@ func TestDocsVerboseOutputIncludesMetadata(t *testing.T) {
 	for _, want := range []string{
 		"Provider: registry.terraform.io/hashicorp/aws",
 		"Version: 6.46.0",
-		"Website: https://registry.terraform.io/providers/hashicorp/aws/6.46.0",
+		"Website: https://registry.terraform.io/providers/hashicorp/aws/6.46.0/docs/resources/vpc",
 		"Doc: resource/aws_vpc",
 		"Source: https://github.com/hashicorp/terraform-provider-aws/blob/v6.46.0/website/docs/r/vpc.html.markdown",
 		"# Resource: aws_vpc",
 	} {
 		if !strings.Contains(stdout, want) {
-			t.Fatalf("expected verbose docs output to contain %q, got:\n%s", want, stdout)
+			t.Fatalf("expected details docs output to contain %q, got:\n%s", want, stdout)
 		}
 	}
 }
 
-func TestDocsListVerboseOutputIncludesProviderWebsite(t *testing.T) {
-	stdout, _, err := execute("--verbose", "docs", "list", "aws", "vpc")
+func TestDocsListDetailsOutputIncludesProviderWebsite(t *testing.T) {
+	stdout, _, err := execute("--details", "docs", "list", "aws", "vpc")
 	if err != nil {
 		t.Fatalf("expected docs list to succeed: %v", err)
 	}
@@ -530,11 +549,11 @@ func TestDocsListVerboseOutputIncludesProviderWebsite(t *testing.T) {
 	for _, want := range []string{
 		"Provider: registry.terraform.io/hashicorp/aws",
 		"Version: 6.46.0",
-		"Website: https://registry.terraform.io/providers/hashicorp/aws/6.46.0",
+		"Website: https://registry.terraform.io/providers/hashicorp/aws/6.46.0/docs",
 		"resource/aws_vpc",
 	} {
 		if !strings.Contains(stdout, want) {
-			t.Fatalf("expected verbose docs list output to contain %q, got:\n%s", want, stdout)
+			t.Fatalf("expected details docs list output to contain %q, got:\n%s", want, stdout)
 		}
 	}
 }

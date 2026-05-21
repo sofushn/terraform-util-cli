@@ -45,7 +45,7 @@ terraform-util docs <provider> <data|resource|function>/<name>
 Recommended global options:
 
 ```sh
---verbose
+--details
 --quiet
 ```
 
@@ -88,21 +88,21 @@ terraform-util search aws
 Example output:
 
 ```text
-hashicorp/aws  AWS  6.0.0  verified
+hashicorp/aws  AWS  6.0.0  true
 ```
 
 The default search result should include enough information to choose a provider:
 
 ```text
-<namespace>/<name>  <display name>  <version>  [verified]
+<namespace>/<name>  <display name>  <version>  <verified>
 ```
 
-Only display `verified` for verified providers. Do not display an unverified status label by default.
+Display `true` in the `verified` column for verified providers. Leave the value empty for unverified providers.
 
-With `--verbose`, search output should also include download counts:
+With `--details`, search output should also include download counts:
 
 ```text
-hashicorp/aws  AWS  6.0.0  verified  downloads: 123456789
+hashicorp/aws  AWS  6.0.0  downloads: 123456789  true
 ```
 
 Selection ranking should prefer:
@@ -219,12 +219,12 @@ resource/aws_vpc
 data/aws_vpc
 ```
 
-With `--verbose`, include provider metadata before the list:
+With `--details`, include provider metadata before the list:
 
 ```text
 Provider: registry.terraform.io/hashicorp/aws
 Version: 6.0.0
-Website: https://registry.terraform.io/providers/hashicorp/aws/6.0.0
+Website: https://registry.terraform.io/providers/hashicorp/aws/6.0.0/docs
 
 resource/aws_vpc
 data/aws_vpc
@@ -249,7 +249,7 @@ Expected behavior:
 - Fetch the matching documentation page.
 - Emit the documentation as plain text or Markdown-like text that is readable in a terminal.
 - Do not include provider metadata in default output.
-- Include provider metadata when `--verbose` is set.
+- Include provider metadata when `--details` is set.
 
 Example output:
 
@@ -259,21 +259,21 @@ Example output:
 ...
 ```
 
-Verbose example output:
+Detailed example output:
 
 ```text
 Provider: registry.terraform.io/hashicorp/aws
 Version: 6.0.0
-Website: https://registry.terraform.io/providers/hashicorp/aws/6.0.0
+Website: https://registry.terraform.io/providers/hashicorp/aws/6.0.0/docs/resources/vpc
 Doc: resource/aws_vpc
-Source: https://registry.terraform.io/providers/hashicorp/aws/6.0.0/docs/resources/vpc
+Source: https://github.com/hashicorp/terraform-provider-aws/blob/v6.0.0/website/docs/r/vpc.html.markdown
 
 # aws_vpc
 
 ...
 ```
 
-For LLM usage, agents that need citation metadata should pass `--verbose` so the output contains the provider version, provider website URL, and source URL.
+For LLM usage, agents that need citation metadata should pass `--details` so the output contains the provider version, provider website URL, and source URL.
 
 ## Registry Integration
 

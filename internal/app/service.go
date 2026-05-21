@@ -42,6 +42,7 @@ type DocPage struct {
 	Path     string
 	Content  string
 	Source   string
+	Website  string
 }
 
 type AddProviderOptions struct {
@@ -313,6 +314,7 @@ func appDocPage(provider Provider, page registry.DocPage) DocPage {
 		Path:     page.Path,
 		Content:  page.Content,
 		Source:   page.Source,
+		Website:  page.Website,
 	}
 }
 

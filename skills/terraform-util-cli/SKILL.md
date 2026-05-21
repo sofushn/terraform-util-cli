@@ -43,7 +43,7 @@ terraform-util
 Global flags:
 
 ```sh
---verbose   # include extra metadata
+--details   # include extra metadata
 --quiet     # suppress non-essential output
 ```
 
@@ -67,24 +67,24 @@ Use search before choosing a provider:
 
 ```sh
 terraform-util search aws
-terraform-util --verbose search aws
+terraform-util --details search aws
 ```
 
 Default output columns are stable-width:
 
 ```text
 provider       name  version  verified
-hashicorp/aws  aws   6.46.0   verified
+hashicorp/aws  aws   6.46.0   true
 ```
 
-Verbose search also includes downloads:
+Detailed search also includes downloads:
 
 ```text
 provider       name  version  downloads  verified
-hashicorp/aws  aws   6.46.0   6254226571 verified
+hashicorp/aws  aws   6.46.0   6254226571 true
 ```
 
-Only verified providers display `verified`; unverified providers have an empty value in that column.
+Verified providers display `true`; unverified providers have an empty value in that column.
 
 ## Read Provider Docs
 
@@ -93,7 +93,7 @@ List available resources, data sources, and functions:
 ```sh
 terraform-util docs list aws
 terraform-util docs list aws vpc
-terraform-util --verbose docs list aws vpc
+terraform-util --details docs list aws vpc
 ```
 
 Default list output is one docs path per line:
@@ -112,10 +112,10 @@ terraform-util docs hashicorp/aws data/aws_ami
 terraform-util docs aws function/arn_parse
 ```
 
-Default docs output is the markdown-like documentation body only. Use `--verbose` when you need provider, version, Terraform Registry website URL, doc path, and source URL metadata:
+Default docs output is the markdown-like documentation body only. Use `--details` when you need provider, version, Terraform Registry website URL, doc path, and source URL metadata:
 
 ```sh
-terraform-util --verbose docs aws resource/aws_vpc
+terraform-util --details docs aws resource/aws_vpc
 ```
 
 Agent pattern:

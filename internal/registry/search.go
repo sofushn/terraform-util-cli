@@ -141,42 +141,49 @@ func (c Client) exactProvider(ctx context.Context, query string) (Provider, bool
 }
 
 func (c Client) searchByName(ctx context.Context, query string) ([]Provider, error) {
-	endpoint, err := url.Parse(c.BaseURL + "/v2/providers")
-	if err != nil {
-		return nil, err
-	}
-	params := endpoint.Query()
-	params.Set("filter[name]", query)
-	params.Set("page[size]", "100")
-	endpoint.RawQuery = params.Encode()
+	const pageSize = 100
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
-	if err != nil {
-		return nil, err
-	}
+	var providers []Provider
+	for pageNumber := 1; ; pageNumber++ {
+		endpoint, err := url.Parse(c.BaseURL + "/v2/providers")
+		if err != nil {
+			return nil, err
+		}
+		params := endpoint.Query()
+		params.Set("filter[name]", query)
+		params.Set("page[size]", fmt.Sprintf("%d", pageSize))
+		params.Set("page[number]", fmt.Sprintf("%d", pageNumber))
+		endpoint.RawQuery = params.Encode()
 
-	var response v2ProvidersResponse
-	if err := c.doJSON(req, &response); err != nil {
-		return nil, err
-	}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+		if err != nil {
+			return nil, err
+		}
 
-	providers := make([]Provider, 0, len(response.Data))
-	for _, item := range response.Data {
-		attrs := item.Attributes
-		providers = append(providers, Provider{
-			Source:        "registry.terraform.io/" + attrs.FullName,
-			RepositoryURL: attrs.Source,
-			Namespace:     attrs.Namespace,
-			Name:          attrs.Name,
-			DisplayName:   displayName(attrs.Alias, attrs.Name),
-			Description:   attrs.Description,
-			Downloads:     attrs.Downloads,
-			Verified:      isVerified(attrs.Tier),
-			Tier:          attrs.Tier,
-		})
-	}
+		var response v2ProvidersResponse
+		if err := c.doJSON(req, &response); err != nil {
+			return nil, err
+		}
 
-	return providers, nil
+		for _, item := range response.Data {
+			attrs := item.Attributes
+			providers = append(providers, Provider{
+				Source:        "registry.terraform.io/" + attrs.FullName,
+				RepositoryURL: attrs.Source,
+				Namespace:     attrs.Namespace,
+				Name:          attrs.Name,
+				DisplayName:   displayName(attrs.Alias, attrs.Name),
+				Description:   attrs.Description,
+				Downloads:     attrs.Downloads,
+				Verified:      isVerified(attrs.Tier),
+				Tier:          attrs.Tier,
+			})
+		}
+
+		if len(response.Data) < pageSize {
+			return providers, nil
+		}
+	}
 }
 
 func (c Client) getProvider(ctx context.Context, namespace string, name string) (Provider, error) {

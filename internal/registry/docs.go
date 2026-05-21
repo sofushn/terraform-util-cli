@@ -24,6 +24,7 @@ type DocPage struct {
 	Path    string
 	Content string
 	Source  string
+	Website string
 }
 
 func (c Client) ListProviderDocs(ctx context.Context, provider Provider) ([]DocItem, error) {
@@ -32,23 +33,13 @@ func (c Client) ListProviderDocs(ctx context.Context, provider Provider) ([]DocI
 		return nil, err
 	}
 
-	endpoint := fmt.Sprintf("%s/v2/provider-versions/%s?include=provider-docs", c.BaseURL, url.PathEscape(versionID))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var response v2ProviderVersionResponse
-	if err := c.doJSON(req, &response); err != nil {
-		return nil, err
-	}
-
-	items := make([]DocItem, 0, len(response.Included))
-	for _, doc := range response.Included {
-		item, ok := docItemFromAttributes(provider.Name, doc.Attributes)
-		if ok {
-			items = append(items, item)
+	var items []DocItem
+	for _, category := range []string{"resources", "data-sources", "functions"} {
+		docs, err := c.listProviderDocsForCategory(ctx, versionID, provider.Name, category)
+		if err != nil {
+			return nil, err
 		}
+		items = append(items, docs...)
 	}
 
 	sort.SliceStable(items, func(i, j int) bool {
@@ -59,6 +50,46 @@ func (c Client) ListProviderDocs(ctx context.Context, provider Provider) ([]DocI
 	})
 
 	return items, nil
+}
+
+func (c Client) listProviderDocsForCategory(ctx context.Context, versionID string, providerName string, category string) ([]DocItem, error) {
+	const pageSize = 100
+
+	var items []DocItem
+	for pageNumber := 1; ; pageNumber++ {
+		endpoint, err := url.Parse(c.BaseURL + "/v2/provider-docs")
+		if err != nil {
+			return nil, err
+		}
+		params := endpoint.Query()
+		params.Set("filter[provider-version]", versionID)
+		params.Set("filter[category]", category)
+		params.Set("filter[language]", "hcl")
+		params.Set("page[size]", fmt.Sprintf("%d", pageSize))
+		params.Set("page[number]", fmt.Sprintf("%d", pageNumber))
+		endpoint.RawQuery = params.Encode()
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var response v2ProviderDocsResponse
+		if err := c.doJSON(req, &response); err != nil {
+			return nil, err
+		}
+
+		for _, doc := range response.Data {
+			item, ok := docItemFromAttributes(providerName, doc.Attributes)
+			if ok {
+				items = append(items, item)
+			}
+		}
+
+		if len(response.Data) < pageSize {
+			return items, nil
+		}
+	}
 }
 
 func (c Client) GetProviderDoc(ctx context.Context, provider Provider, kind string, name string) (DocPage, error) {
@@ -83,6 +114,7 @@ func (c Client) GetProviderDoc(ctx context.Context, provider Provider, kind stri
 	}
 
 	source := providerDocSource(provider.RepositoryURL, versionTag, item.Path)
+	website := providerDocWebsite(provider, item.Kind, item.Slug)
 	return DocPage{
 		Kind:    item.Kind,
 		Name:    item.Name,
@@ -90,6 +122,7 @@ func (c Client) GetProviderDoc(ctx context.Context, provider Provider, kind stri
 		Path:    item.Path,
 		Content: stripFrontMatter(page.Data.Attributes.Content),
 		Source:  source,
+		Website: website,
 	}, nil
 }
 
@@ -265,6 +298,27 @@ func providerDocSource(repositoryURL string, versionTag string, path string) str
 	return strings.TrimRight(repositoryURL, "/") + "/blob/" + versionTag + "/" + path
 }
 
+func providerDocWebsite(provider Provider, kind string, slug string) string {
+	category, err := docsCategory(kind)
+	if err != nil || slug == "" {
+		return ""
+	}
+
+	version := provider.LatestVersion
+	if strings.TrimSpace(version) == "" {
+		version = "latest"
+	}
+
+	return fmt.Sprintf("%s/providers/%s/%s/%s/docs/%s/%s",
+		officialRegistryURL,
+		url.PathEscape(provider.Namespace),
+		url.PathEscape(provider.Name),
+		url.PathEscape(version),
+		url.PathEscape(category),
+		url.PathEscape(slug),
+	)
+}
+
 func stripFrontMatter(content string) string {
 	content = strings.TrimSpace(content)
 	if !strings.HasPrefix(content, "---\n") {
@@ -291,10 +345,6 @@ func docKindRank(kind string) int {
 	default:
 		return 3
 	}
-}
-
-type v2ProviderVersionResponse struct {
-	Included []v2ProviderDocData `json:"included"`
 }
 
 type v2ProviderDocsResponse struct {

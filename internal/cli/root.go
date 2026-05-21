@@ -13,7 +13,7 @@ import (
 )
 
 type options struct {
-	verbose bool
+	details bool
 	quiet   bool
 }
 
@@ -52,7 +52,7 @@ func newRootCommand(deps dependencies) *cobra.Command {
 		&cobra.Group{ID: "project", Title: "Terraform Project Commands"},
 	)
 
-	rootCmd.PersistentFlags().BoolVar(&opts.verbose, "verbose", false, "show additional output")
+	rootCmd.PersistentFlags().BoolVarP(&opts.details, "details", "d", false, "show detailed output")
 	rootCmd.PersistentFlags().BoolVar(&opts.quiet, "quiet", false, "suppress non-essential output")
 
 	rootCmd.AddCommand(newSearchCommand(opts, deps.service))
@@ -106,7 +106,7 @@ func newSearchCommand(opts *options, svc service) *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "No providers found for %q\n", args[0])
 				return nil
 			}
-			printProviderSearchResults(cmd.OutOrStdout(), providers, opts.verbose)
+			printProviderSearchResults(cmd.OutOrStdout(), providers, opts.details)
 			return nil
 		},
 	}
@@ -220,7 +220,7 @@ func newDocsCommand(opts *options, svc service) *cobra.Command {
 				return nil
 			}
 
-			printDocPage(cmd.OutOrStdout(), page, opts.verbose)
+			printDocPage(cmd.OutOrStdout(), page, opts.details)
 			return nil
 		},
 	}
@@ -248,7 +248,7 @@ func newDocsListCommand(opts *options, svc service) *cobra.Command {
 				return nil
 			}
 
-			printDocList(cmd.OutOrStdout(), items, opts.verbose)
+			printDocList(cmd.OutOrStdout(), items, opts.details)
 			return nil
 		},
 	}
@@ -287,9 +287,9 @@ func printChangedFiles(w io.Writer, changedFiles []string) {
 	}
 }
 
-func printDocList(w io.Writer, items []app.DocItem, verbose bool) {
-	if verbose && len(items) > 0 {
-		printProviderMetadata(w, items[0].Provider)
+func printDocList(w io.Writer, items []app.DocItem, details bool) {
+	if details && len(items) > 0 {
+		printProviderMetadata(w, items[0].Provider, providerDocsWebsiteURL(items[0].Provider))
 		fmt.Fprintln(w)
 	}
 
@@ -298,9 +298,9 @@ func printDocList(w io.Writer, items []app.DocItem, verbose bool) {
 	}
 }
 
-func printDocPage(w io.Writer, page app.DocPage, verbose bool) {
-	if verbose {
-		printProviderMetadata(w, page.Provider)
+func printDocPage(w io.Writer, page app.DocPage, details bool) {
+	if details {
+		printProviderMetadata(w, page.Provider, page.Website)
 		fmt.Fprintf(w, "Doc: %s/%s\n", page.Kind, page.Name)
 		if page.Source != "" {
 			fmt.Fprintf(w, "Source: %s\n", page.Source)
@@ -311,10 +311,13 @@ func printDocPage(w io.Writer, page app.DocPage, verbose bool) {
 	fmt.Fprintln(w, page.Content)
 }
 
-func printProviderMetadata(w io.Writer, provider app.Provider) {
+func printProviderMetadata(w io.Writer, provider app.Provider, website string) {
 	fmt.Fprintf(w, "Provider: %s\n", provider.Source)
 	fmt.Fprintf(w, "Version: %s\n", provider.LatestVersion)
-	if website := providerWebsiteURL(provider); website != "" {
+	if website == "" {
+		website = providerWebsiteURL(provider)
+	}
+	if website != "" {
 		fmt.Fprintf(w, "Website: %s\n", website)
 	}
 }
@@ -334,21 +337,29 @@ func providerWebsiteURL(provider app.Provider) string {
 	return fmt.Sprintf("https://registry.terraform.io/providers/%s/%s/%s", parts[0], parts[1], version)
 }
 
-func printProviderSearchResults(w io.Writer, providers []app.Provider, verbose bool) {
-	widths := searchColumnWidths(providers, verbose)
-	printSearchRow(w, widths, verbose, []string{"provider", "name", "version", "downloads", "verified"})
+func providerDocsWebsiteURL(provider app.Provider) string {
+	website := providerWebsiteURL(provider)
+	if website == "" {
+		return ""
+	}
+	return website + "/docs"
+}
+
+func printProviderSearchResults(w io.Writer, providers []app.Provider, details bool) {
+	widths := searchColumnWidths(providers, details)
+	printSearchRow(w, widths, details, []string{"provider", "name", "version", "downloads", "verified"})
 	for _, provider := range providers {
 		verified := ""
 		if provider.Verified {
-			verified = "verified"
+			verified = "true"
 		}
 
 		downloads := ""
-		if verbose {
+		if details {
 			downloads = fmt.Sprintf("%d", provider.Downloads)
 		}
 
-		printSearchRow(w, widths, verbose, []string{
+		printSearchRow(w, widths, details, []string{
 			provider.Namespace + "/" + provider.Name,
 			provider.DisplayName,
 			provider.LatestVersion,
@@ -358,7 +369,7 @@ func printProviderSearchResults(w io.Writer, providers []app.Provider, verbose b
 	}
 }
 
-func searchColumnWidths(providers []app.Provider, verbose bool) []int {
+func searchColumnWidths(providers []app.Provider, details bool) []int {
 	widths := []int{len("provider"), len("name"), len("version"), len("downloads"), len("verified")}
 
 	for _, provider := range providers {
@@ -370,11 +381,11 @@ func searchColumnWidths(providers []app.Provider, verbose bool) []int {
 			"",
 		}
 		if provider.Verified {
-			values[4] = "verified"
+			values[4] = "true"
 		}
 
 		indexes := []int{0, 1, 2, 4}
-		if verbose {
+		if details {
 			indexes = []int{0, 1, 2, 3, 4}
 		}
 		for _, i := range indexes {
@@ -387,10 +398,10 @@ func searchColumnWidths(providers []app.Provider, verbose bool) []int {
 	return widths
 }
 
-func printSearchRow(w io.Writer, widths []int, verbose bool, values []string) {
+func printSearchRow(w io.Writer, widths []int, details bool, values []string) {
 	row := values
 	rowWidths := widths
-	if !verbose {
+	if !details {
 		row = []string{values[0], values[1], values[2], values[4]}
 		rowWidths = []int{widths[0], widths[1], widths[2], widths[4]}
 	}
