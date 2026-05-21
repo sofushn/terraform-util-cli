@@ -19,6 +19,8 @@ type options struct {
 
 type service interface {
 	SearchProviders(context.Context, string) ([]app.Provider, error)
+	ListProviderDocs(context.Context, string, string) ([]app.DocItem, error)
+	GetProviderDoc(context.Context, string, string) (app.DocPage, error)
 	AddProvider(context.Context, string, string, string) (app.ProjectResult, error)
 	UpdateProvider(context.Context, string, string, string) (app.ProjectResult, error)
 	RemoveProvider(context.Context, string, string) (app.ProjectResult, error)
@@ -57,7 +59,7 @@ func newRootCommand(deps dependencies) *cobra.Command {
 	rootCmd.AddCommand(newAddCommand(opts, deps.service))
 	rootCmd.AddCommand(newRemoveCommand(opts, deps.service))
 	rootCmd.AddCommand(newUpdateCommand(opts, deps.service))
-	rootCmd.AddCommand(newDocsCommand(opts))
+	rootCmd.AddCommand(newDocsCommand(opts, deps.service))
 
 	return rootCmd
 }
@@ -203,43 +205,50 @@ func newUpdateCommand(opts *options, svc service) *cobra.Command {
 	return cmd
 }
 
-func newDocsCommand(opts *options) *cobra.Command {
+func newDocsCommand(opts *options, svc service) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "docs <provider> <data/name|resource/name|function/name>",
 		Short:   "List or fetch provider docs",
 		GroupID: "registry",
 		Args:    validateDocsPathArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			page, err := svc.GetProviderDoc(cmd.Context(), args[0], args[1])
+			if err != nil {
+				return err
+			}
 			if opts.quiet {
 				return nil
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "docs provider: %s path: %s\n", args[0], args[1])
+			printDocPage(cmd.OutOrStdout(), page, opts.verbose)
 			return nil
 		},
 	}
 
-	cmd.AddCommand(newDocsListCommand(opts))
+	cmd.AddCommand(newDocsListCommand(opts, svc))
 
 	return cmd
 }
 
-func newDocsListCommand(opts *options) *cobra.Command {
+func newDocsListCommand(opts *options, svc service) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list <provider> [keyword]",
 		Short: "List provider docs",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			keyword := ""
+			if len(args) == 2 {
+				keyword = args[1]
+			}
+			items, err := svc.ListProviderDocs(cmd.Context(), args[0], keyword)
+			if err != nil {
+				return err
+			}
 			if opts.quiet {
 				return nil
 			}
 
-			if len(args) == 2 {
-				fmt.Fprintf(cmd.OutOrStdout(), "docs provider: %s list keyword: %s\n", args[0], args[1])
-				return nil
-			}
-
-			fmt.Fprintf(cmd.OutOrStdout(), "docs provider: %s list\n", args[0])
+			printDocList(cmd.OutOrStdout(), items, opts.verbose)
 			return nil
 		},
 	}
@@ -276,6 +285,31 @@ func printChangedFiles(w io.Writer, changedFiles []string) {
 	for _, name := range changedFiles {
 		fmt.Fprintf(w, "  %s\n", name)
 	}
+}
+
+func printDocList(w io.Writer, items []app.DocItem, verbose bool) {
+	if verbose && len(items) > 0 {
+		fmt.Fprintf(w, "Provider: %s\n", items[0].Provider.Source)
+		fmt.Fprintf(w, "Version: %s\n\n", items[0].Provider.LatestVersion)
+	}
+
+	for _, item := range items {
+		fmt.Fprintf(w, "%s/%s\n", item.Kind, item.Name)
+	}
+}
+
+func printDocPage(w io.Writer, page app.DocPage, verbose bool) {
+	if verbose {
+		fmt.Fprintf(w, "Provider: %s\n", page.Provider.Source)
+		fmt.Fprintf(w, "Version: %s\n", page.Provider.LatestVersion)
+		fmt.Fprintf(w, "Doc: %s/%s\n", page.Kind, page.Name)
+		if page.Source != "" {
+			fmt.Fprintf(w, "Source: %s\n", page.Source)
+		}
+		fmt.Fprintln(w)
+	}
+
+	fmt.Fprintln(w, page.Content)
 }
 
 func printProviderSearchResults(w io.Writer, providers []app.Provider, verbose bool) {

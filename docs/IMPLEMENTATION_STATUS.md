@@ -15,9 +15,9 @@ This document tracks temporary implementation state. The product spec in [SPEC.m
 - `remove` stays local-only and does not verify against the registry.
 - `add` and `update` use the latest provider version when no explicit version constraint is provided.
 - Local `.tf` file edits using HashiCorp HCL tooling.
-- Tests for CLI parsing, provider search, and project file edits.
+- Registry-backed `docs list <provider> [keyword]` and `docs <provider> <kind>/<name>` commands.
+- Tests for CLI parsing, provider search, provider docs, and project file edits.
 
 ## Temporary Limitations
 
-- `docs` commands still print placeholder output.
-- Project commands do not call the Terraform Registry.
+- None currently documented.

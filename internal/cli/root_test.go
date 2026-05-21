@@ -28,6 +28,22 @@ func execute(args ...string) (string, string, error) {
 			VersionConstraint: "6.46.0",
 			ChangedFiles:      []string{"providers.tf", "versions.tf"},
 		},
+		docItems: []app.DocItem{{
+			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
+			Kind:     "resource",
+			Name:     "aws_vpc",
+		}, {
+			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
+			Kind:     "data",
+			Name:     "aws_ami",
+		}},
+		docPage: app.DocPage{
+			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
+			Kind:     "resource",
+			Name:     "aws_vpc",
+			Content:  "# Resource: aws_vpc",
+			Source:   "https://github.com/hashicorp/terraform-provider-aws/blob/v6.46.0/website/docs/r/vpc.html.markdown",
+		},
 	}, args...)
 }
 
@@ -114,7 +130,7 @@ func TestDocumentedCommandsAcceptValidArguments(t *testing.T) {
 		{
 			name: "docs path",
 			args: []string{"docs", "aws", "resource/aws_vpc"},
-			want: "docs provider: aws path: resource/aws_vpc\n",
+			want: "# Resource: aws_vpc\n",
 		},
 	}
 
@@ -362,12 +378,12 @@ func TestDocsListWithAndWithoutKeyword(t *testing.T) {
 		{
 			name: "without keyword",
 			args: []string{"docs", "list", "aws"},
-			want: "docs provider: aws list\n",
+			want: "resource/aws_vpc\ndata/aws_ami\n",
 		},
 		{
 			name: "with keyword",
 			args: []string{"docs", "list", "aws", "vpc"},
-			want: "docs provider: aws list keyword: vpc\n",
+			want: "resource/aws_vpc\n",
 		},
 	}
 
@@ -398,7 +414,7 @@ func TestDocsPathKindsParse(t *testing.T) {
 				t.Fatalf("expected docs path to succeed: %v", err)
 			}
 
-			want := "docs provider: aws path: " + path + "\n"
+			want := "# Resource: aws_vpc\n"
 			if stdout != want {
 				t.Fatalf("unexpected stdout:\nwant: %q\n got: %q", want, stdout)
 			}
@@ -485,9 +501,30 @@ func TestCommandSpecificFutureFlagsParse(t *testing.T) {
 	}
 }
 
+func TestDocsVerboseOutputIncludesMetadata(t *testing.T) {
+	stdout, _, err := execute("--verbose", "docs", "aws", "resource/aws_vpc")
+	if err != nil {
+		t.Fatalf("expected docs path to succeed: %v", err)
+	}
+
+	for _, want := range []string{
+		"Provider: registry.terraform.io/hashicorp/aws",
+		"Version: 6.46.0",
+		"Doc: resource/aws_vpc",
+		"Source: https://github.com/hashicorp/terraform-provider-aws/blob/v6.46.0/website/docs/r/vpc.html.markdown",
+		"# Resource: aws_vpc",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected verbose docs output to contain %q, got:\n%s", want, stdout)
+		}
+	}
+}
+
 type fakeService struct {
 	providers     []app.Provider
 	projectResult app.ProjectResult
+	docItems      []app.DocItem
+	docPage       app.DocPage
 	err           error
 }
 
@@ -496,6 +533,30 @@ func (s fakeService) SearchProviders(ctx context.Context, query string) ([]app.P
 		return nil, s.err
 	}
 	return s.providers, nil
+}
+
+func (s fakeService) ListProviderDocs(ctx context.Context, provider string, keyword string) ([]app.DocItem, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if keyword == "" {
+		return s.docItems, nil
+	}
+
+	filtered := make([]app.DocItem, 0, len(s.docItems))
+	for _, item := range s.docItems {
+		if strings.Contains(item.Kind+"/"+item.Name, keyword) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, nil
+}
+
+func (s fakeService) GetProviderDoc(ctx context.Context, provider string, docsPath string) (app.DocPage, error) {
+	if s.err != nil {
+		return app.DocPage{}, s.err
+	}
+	return s.docPage, nil
 }
 
 func (s fakeService) AddProvider(ctx context.Context, cwd string, provider string, versionConstraint string) (app.ProjectResult, error) {

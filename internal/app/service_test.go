@@ -13,7 +13,7 @@ func TestAddProviderResolvesBeforeEditing(t *testing.T) {
 		resolved: Provider{Namespace: "popular", Name: "aws", LatestVersion: "1.2.3"},
 	}
 	editor := &fakeEditor{}
-	service := NewService(resolver, editor)
+	service := NewService(resolver, resolver, editor)
 
 	result, err := service.AddProvider(context.Background(), "/work", "aws", "~> 1.0")
 	if err != nil {
@@ -42,7 +42,7 @@ func TestAddProviderUsesLatestVersionWhenOmitted(t *testing.T) {
 		resolved: Provider{Namespace: "popular", Name: "aws", LatestVersion: "1.2.3"},
 	}
 	editor := &fakeEditor{}
-	service := NewService(resolver, editor)
+	service := NewService(resolver, resolver, editor)
 
 	if _, err := service.AddProvider(context.Background(), "/work", "aws", ""); err != nil {
 		t.Fatalf("add provider: %v", err)
@@ -55,7 +55,7 @@ func TestAddProviderUsesLatestVersionWhenOmitted(t *testing.T) {
 func TestAddProviderReturnsResolverError(t *testing.T) {
 	resolver := &fakeResolver{err: errResolver}
 	editor := &fakeEditor{}
-	service := NewService(resolver, editor)
+	service := NewService(resolver, resolver, editor)
 
 	if _, err := service.AddProvider(context.Background(), "/work", "aws", ""); !errors.Is(err, errResolver) {
 		t.Fatalf("expected resolver error, got %v", err)
@@ -70,7 +70,7 @@ func TestUpdateProviderResolvesBeforeEditing(t *testing.T) {
 		resolved: Provider{Namespace: "hashicorp", Name: "aws", LatestVersion: "6.46.0"},
 	}
 	editor := &fakeEditor{}
-	service := NewService(resolver, editor)
+	service := NewService(resolver, resolver, editor)
 
 	if _, err := service.UpdateProvider(context.Background(), "/work", "aws", "~> 6.1"); err != nil {
 		t.Fatalf("update provider: %v", err)
@@ -92,7 +92,7 @@ func TestUpdateProviderUsesLatestVersionWhenOmitted(t *testing.T) {
 		resolved: Provider{Namespace: "hashicorp", Name: "aws", LatestVersion: "6.46.0"},
 	}
 	editor := &fakeEditor{}
-	service := NewService(resolver, editor)
+	service := NewService(resolver, resolver, editor)
 
 	if _, err := service.UpdateProvider(context.Background(), "/work", "aws", ""); err != nil {
 		t.Fatalf("update provider: %v", err)
@@ -105,7 +105,7 @@ func TestUpdateProviderUsesLatestVersionWhenOmitted(t *testing.T) {
 func TestRemoveProviderDoesNotResolve(t *testing.T) {
 	resolver := &fakeResolver{err: errResolver}
 	editor := &fakeEditor{}
-	service := NewService(resolver, editor)
+	service := NewService(resolver, resolver, editor)
 
 	if _, err := service.RemoveProvider(context.Background(), "/work", "aws"); err != nil {
 		t.Fatalf("remove provider: %v", err)
@@ -131,7 +131,7 @@ func TestSearchProvidersDelegatesToResolver(t *testing.T) {
 			Verified:      true,
 		}},
 	}
-	service := NewService(resolver, &fakeEditor{})
+	service := NewService(resolver, resolver, &fakeEditor{})
 
 	providers, err := service.SearchProviders(context.Background(), "aws")
 	if err != nil {
@@ -145,14 +145,79 @@ func TestSearchProvidersDelegatesToResolver(t *testing.T) {
 	}
 }
 
+func TestListProviderDocsResolvesAndFilters(t *testing.T) {
+	resolver := &fakeResolver{
+		resolved: Provider{
+			Source:        "registry.terraform.io/hashicorp/aws",
+			Namespace:     "hashicorp",
+			Name:          "aws",
+			LatestVersion: "6.46.0",
+		},
+		docs: []DocItem{{
+			Kind: "resource",
+			Name: "aws_vpc",
+		}, {
+			Kind: "data",
+			Name: "aws_ami",
+		}},
+	}
+	service := NewService(resolver, resolver, &fakeEditor{})
+
+	items, err := service.ListProviderDocs(context.Background(), "aws", "vpc")
+	if err != nil {
+		t.Fatalf("list provider docs: %v", err)
+	}
+
+	if resolver.resolveCalls != 1 || resolver.listDocsCalls != 1 {
+		t.Fatalf("expected resolve and docs calls, got resolve=%d docs=%d", resolver.resolveCalls, resolver.listDocsCalls)
+	}
+	if len(items) != 1 || items[0].Name != "aws_vpc" || items[0].Provider.Source != "registry.terraform.io/hashicorp/aws" {
+		t.Fatalf("unexpected filtered docs: %#v", items)
+	}
+}
+
+func TestGetProviderDocResolvesAndFetchesPath(t *testing.T) {
+	resolver := &fakeResolver{
+		resolved: Provider{
+			Source:        "registry.terraform.io/hashicorp/aws",
+			Namespace:     "hashicorp",
+			Name:          "aws",
+			LatestVersion: "6.46.0",
+		},
+		docPage: DocPage{
+			Kind:    "resource",
+			Name:    "aws_vpc",
+			Content: "# Resource: aws_vpc",
+		},
+	}
+	service := NewService(resolver, resolver, &fakeEditor{})
+
+	page, err := service.GetProviderDoc(context.Background(), "aws", "resource/aws_vpc")
+	if err != nil {
+		t.Fatalf("get provider doc: %v", err)
+	}
+
+	if resolver.docKind != "resource" || resolver.docName != "aws_vpc" {
+		t.Fatalf("unexpected docs request kind=%q name=%q", resolver.docKind, resolver.docName)
+	}
+	if page.Provider.Source != "registry.terraform.io/hashicorp/aws" || page.Content != "# Resource: aws_vpc" {
+		t.Fatalf("unexpected doc page: %#v", page)
+	}
+}
+
 type fakeResolver struct {
-	providers    []Provider
-	resolved     Provider
-	err          error
-	searchCalls  int
-	searchQuery  string
-	resolveCalls int
-	resolveQuery string
+	providers     []Provider
+	resolved      Provider
+	docs          []DocItem
+	docPage       DocPage
+	err           error
+	searchCalls   int
+	searchQuery   string
+	resolveCalls  int
+	resolveQuery  string
+	listDocsCalls int
+	docKind       string
+	docName       string
 }
 
 func (r *fakeResolver) SearchProviders(ctx context.Context, query string) ([]Provider, error) {
@@ -171,6 +236,30 @@ func (r *fakeResolver) ResolveProvider(ctx context.Context, query string) (Provi
 		return Provider{}, r.err
 	}
 	return r.resolved, nil
+}
+
+func (r *fakeResolver) ListProviderDocs(ctx context.Context, provider Provider) ([]DocItem, error) {
+	r.listDocsCalls++
+	if r.err != nil {
+		return nil, r.err
+	}
+	out := make([]DocItem, len(r.docs))
+	copy(out, r.docs)
+	for i := range out {
+		out[i].Provider = provider
+	}
+	return out, nil
+}
+
+func (r *fakeResolver) GetProviderDoc(ctx context.Context, provider Provider, kind string, name string) (DocPage, error) {
+	r.docKind = kind
+	r.docName = name
+	if r.err != nil {
+		return DocPage{}, r.err
+	}
+	page := r.docPage
+	page.Provider = provider
+	return page, nil
 }
 
 type fakeEditor struct {

@@ -20,6 +20,7 @@ type Client struct {
 
 type Provider struct {
 	Source        string
+	RepositoryURL string
 	Namespace     string
 	Name          string
 	DisplayName   string
@@ -163,14 +164,15 @@ func (c Client) searchByName(ctx context.Context, query string) ([]Provider, err
 	for _, item := range response.Data {
 		attrs := item.Attributes
 		providers = append(providers, Provider{
-			Source:      "registry.terraform.io/" + attrs.FullName,
-			Namespace:   attrs.Namespace,
-			Name:        attrs.Name,
-			DisplayName: displayName(attrs.Alias, attrs.Name),
-			Description: attrs.Description,
-			Downloads:   attrs.Downloads,
-			Verified:    isVerified(attrs.Tier),
-			Tier:        attrs.Tier,
+			Source:        "registry.terraform.io/" + attrs.FullName,
+			RepositoryURL: attrs.Source,
+			Namespace:     attrs.Namespace,
+			Name:          attrs.Name,
+			DisplayName:   displayName(attrs.Alias, attrs.Name),
+			Description:   attrs.Description,
+			Downloads:     attrs.Downloads,
+			Verified:      isVerified(attrs.Tier),
+			Tier:          attrs.Tier,
 		})
 	}
 
@@ -191,6 +193,7 @@ func (c Client) getProvider(ctx context.Context, namespace string, name string) 
 
 	return Provider{
 		Source:        "registry.terraform.io/" + response.Namespace + "/" + response.Name,
+		RepositoryURL: response.Source,
 		Namespace:     response.Namespace,
 		Name:          response.Name,
 		DisplayName:   displayName(response.Alias, response.Name),
@@ -294,6 +297,7 @@ type v1ProviderResponse struct {
 	Version     string `json:"version"`
 	Description string `json:"description"`
 	Downloads   int64  `json:"downloads"`
+	Source      string `json:"source"`
 	Tier        string `json:"tier"`
 }
 
@@ -306,6 +310,7 @@ type v2ProvidersResponse struct {
 			FullName    string `json:"full-name"`
 			Name        string `json:"name"`
 			Namespace   string `json:"namespace"`
+			Source      string `json:"source"`
 			Tier        string `json:"tier"`
 		} `json:"attributes"`
 	} `json:"data"`
