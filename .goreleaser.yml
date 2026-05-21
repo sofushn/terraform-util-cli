@@ -37,8 +37,6 @@ checksum:
 
 release:
   name_template: "{{ .Tag }}"
-  header: |
-    ## Changes
   footer: |
     ## Artifacts
 
