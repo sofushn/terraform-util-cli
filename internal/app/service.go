@@ -46,6 +46,12 @@ type DocPage struct {
 	Website  string
 }
 
+type ProviderVersion struct {
+	Provider    Provider
+	Version     string
+	PublishedAt string
+}
+
 type AddProviderOptions struct {
 	VersionConstraint string
 }
@@ -64,6 +70,7 @@ type ProviderDocs interface {
 	ListProviderDocs(context.Context, Provider) ([]DocItem, error)
 	StreamProviderDocs(context.Context, Provider, func([]DocItem) error) error
 	GetProviderDoc(context.Context, Provider, string, string) (DocPage, error)
+	ListProviderVersions(context.Context, Provider) ([]ProviderVersion, error)
 }
 
 type ProjectEditor interface {
@@ -154,6 +161,23 @@ func (s Service) GetProviderDoc(ctx context.Context, providerInput string, docsP
 	}
 
 	return s.docs.GetProviderDoc(ctx, provider, kind, name)
+}
+
+func (s Service) ListProviderVersions(ctx context.Context, providerInput string) ([]ProviderVersion, error) {
+	provider, err := s.resolver.ResolveProvider(ctx, providerInput)
+	if err != nil {
+		return nil, err
+	}
+
+	versions, err := s.docs.ListProviderVersions(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range versions {
+		versions[i].Provider = provider
+	}
+	return versions, nil
 }
 
 func (s Service) AddProvider(ctx context.Context, cwd string, providerInput string, versionConstraint string) (ProjectResult, error) {
@@ -290,6 +314,23 @@ func (r registryAdapter) GetProviderDoc(ctx context.Context, provider Provider, 
 		return DocPage{}, err
 	}
 	return appDocPage(provider, page), nil
+}
+
+func (r registryAdapter) ListProviderVersions(ctx context.Context, provider Provider) ([]ProviderVersion, error) {
+	versions, err := r.client.ListProviderVersions(ctx, registryProvider(provider))
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]ProviderVersion, 0, len(versions))
+	for _, version := range versions {
+		out = append(out, ProviderVersion{
+			Provider:    provider,
+			Version:     version.Version,
+			PublishedAt: version.PublishedAt,
+		})
+	}
+	return out, nil
 }
 
 type projectEditor struct{}

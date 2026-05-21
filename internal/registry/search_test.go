@@ -380,6 +380,39 @@ func TestGetProviderDocFetchesContentAndSource(t *testing.T) {
 	}
 }
 
+func TestListProviderVersionsSortsNewestFirst(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/providers/hashicorp/aws" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("include"); got != "provider-versions" {
+			t.Fatalf("unexpected include: %q", got)
+		}
+		w.Write([]byte(`{
+			"included": [
+				{"type":"provider-versions","id":"1","attributes":{"version":"6.44.0","published-at":"2026-05-06T18:00:00Z","tag":"v6.44.0"}},
+				{"type":"provider-versions","id":"2","attributes":{"version":"6.46.0","published-at":"2026-05-20T18:00:00Z","tag":"v6.46.0"}},
+				{"type":"provider-versions","id":"3","attributes":{"version":"6.45.0","published-at":"2026-05-13T18:00:00Z","tag":"v6.45.0"}}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClientForBaseURL(server.URL)
+	versions, err := client.ListProviderVersions(context.Background(), Provider{Namespace: "hashicorp", Name: "aws"})
+	if err != nil {
+		t.Fatalf("list provider versions: %v", err)
+	}
+
+	got := []string{versions[0].Version, versions[1].Version, versions[2].Version}
+	if fmt.Sprint(got) != "[6.46.0 6.45.0 6.44.0]" {
+		t.Fatalf("unexpected versions: %#v", versions)
+	}
+	if versions[0].PublishedAt != "2026-05-20T18:00:00Z" {
+		t.Fatalf("unexpected published date: %#v", versions[0])
+	}
+}
+
 func providerDocsResponseJSON(category string, count int, prefix string) string {
 	return providerDocsResponseJSONWithTotalPages(category, count, prefix, 0)
 }

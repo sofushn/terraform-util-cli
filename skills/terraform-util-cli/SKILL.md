@@ -86,6 +86,33 @@ hashicorp/aws  aws   6.46.0   6254226571  official  true
 
 Verified providers display `true`; unverified providers have an empty value in that column.
 
+## List Provider Versions
+
+Use `versions` to list all known versions for a provider:
+
+```sh
+terraform-util versions aws
+terraform-util --details versions aws
+```
+
+Default output:
+
+```text
+version
+6.46.0
+6.45.0
+```
+
+Detailed output includes provider metadata and publish dates:
+
+```text
+provider: registry.terraform.io/hashicorp/aws
+website: https://registry.terraform.io/providers/hashicorp/aws
+
+version  published
+6.46.0   2026-05-20
+```
+
 ## Read Provider Docs
 
 List available resources, data sources, and functions:

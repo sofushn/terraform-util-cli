@@ -269,11 +269,40 @@ func TestGetProviderDocResolvesAndFetchesPath(t *testing.T) {
 	}
 }
 
+func TestListProviderVersionsResolvesProvider(t *testing.T) {
+	resolver := &fakeResolver{
+		resolved: Provider{
+			Source:        "registry.terraform.io/hashicorp/aws",
+			Namespace:     "hashicorp",
+			Name:          "aws",
+			LatestVersion: "6.46.0",
+		},
+		versions: []ProviderVersion{{
+			Version:     "6.46.0",
+			PublishedAt: "2026-05-20T18:00:00Z",
+		}},
+	}
+	service := NewService(resolver, resolver, &fakeEditor{})
+
+	versions, err := service.ListProviderVersions(context.Background(), "aws")
+	if err != nil {
+		t.Fatalf("list provider versions: %v", err)
+	}
+
+	if resolver.resolveCalls != 1 || resolver.listVersionsCalls != 1 {
+		t.Fatalf("expected resolve and list versions calls, got resolve=%d versions=%d", resolver.resolveCalls, resolver.listVersionsCalls)
+	}
+	if len(versions) != 1 || versions[0].Provider.Source != "registry.terraform.io/hashicorp/aws" || versions[0].Version != "6.46.0" {
+		t.Fatalf("unexpected versions: %#v", versions)
+	}
+}
+
 type fakeResolver struct {
 	providers         []Provider
 	resolved          Provider
 	docs              []DocItem
 	docPage           DocPage
+	versions          []ProviderVersion
 	err               error
 	searchCalls       int
 	streamSearchCalls int
@@ -282,6 +311,7 @@ type fakeResolver struct {
 	resolveQuery      string
 	listDocsCalls     int
 	streamDocsCalls   int
+	listVersionsCalls int
 	docKind           string
 	docName           string
 }
@@ -348,6 +378,19 @@ func (r *fakeResolver) GetProviderDoc(ctx context.Context, provider Provider, ki
 	page := r.docPage
 	page.Provider = provider
 	return page, nil
+}
+
+func (r *fakeResolver) ListProviderVersions(ctx context.Context, provider Provider) ([]ProviderVersion, error) {
+	r.listVersionsCalls++
+	if r.err != nil {
+		return nil, r.err
+	}
+	out := make([]ProviderVersion, len(r.versions))
+	copy(out, r.versions)
+	for i := range out {
+		out[i].Provider = provider
+	}
+	return out, nil
 }
 
 type fakeEditor struct {

@@ -24,6 +24,7 @@ type service interface {
 	ListProviderDocs(context.Context, string, string) ([]app.DocItem, error)
 	StreamProviderDocs(context.Context, string, string, func([]app.DocItem) error) error
 	GetProviderDoc(context.Context, string, string) (app.DocPage, error)
+	ListProviderVersions(context.Context, string) ([]app.ProviderVersion, error)
 	AddProvider(context.Context, string, string, string) (app.ProjectResult, error)
 	UpdateProvider(context.Context, string, string, string) (app.ProjectResult, error)
 	RemoveProvider(context.Context, string, string) (app.ProjectResult, error)
@@ -59,6 +60,7 @@ func newRootCommand(deps dependencies) *cobra.Command {
 	rootCmd.PersistentFlags().BoolVar(&opts.quiet, "quiet", false, "suppress non-essential output")
 
 	rootCmd.AddCommand(newSearchCommand(opts, deps.service))
+	rootCmd.AddCommand(newVersionsCommand(opts, deps.service))
 	rootCmd.AddCommand(newAddCommand(opts, deps.service))
 	rootCmd.AddCommand(newRemoveCommand(opts, deps.service))
 	rootCmd.AddCommand(newUpdateCommand(opts, deps.service))
@@ -117,6 +119,26 @@ func newSearchCommand(opts *options, svc service) *cobra.Command {
 			if !printed {
 				fmt.Fprintf(cmd.OutOrStdout(), "No providers found for %q\n", args[0])
 			}
+			return nil
+		},
+	}
+}
+
+func newVersionsCommand(opts *options, svc service) *cobra.Command {
+	return &cobra.Command{
+		Use:     "versions <provider>",
+		Short:   "List provider versions",
+		GroupID: "registry",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			versions, err := svc.ListProviderVersions(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			if opts.quiet {
+				return nil
+			}
+			printProviderVersions(cmd.OutOrStdout(), versions, opts.details)
 			return nil
 		},
 	}
@@ -326,6 +348,41 @@ func printDocPage(w io.Writer, page app.DocPage, details bool) {
 	fmt.Fprintln(w, page.Content)
 }
 
+func printProviderVersions(w io.Writer, versions []app.ProviderVersion, details bool) {
+	if details && len(versions) > 0 {
+		provider := versions[0].Provider
+		fmt.Fprintf(w, "provider: %s\n", provider.Source)
+		fmt.Fprintf(w, "website: %s\n\n", providerWebsiteURLWithoutVersion(provider))
+		printVersionsRow(w, []int{len("version"), len("published")}, []string{"version", "published"})
+		for _, version := range versions {
+			printVersionsRow(w, []int{len("version"), len("published")}, []string{version.Version, publishedDate(version.PublishedAt)})
+		}
+		return
+	}
+
+	fmt.Fprintln(w, "version")
+	for _, version := range versions {
+		fmt.Fprintln(w, version.Version)
+	}
+}
+
+func printVersionsRow(w io.Writer, widths []int, values []string) {
+	for i := 0; i < len(values); i++ {
+		if i > 0 {
+			fmt.Fprint(w, "  ")
+		}
+		fmt.Fprintf(w, "%-*s", widths[i], values[i])
+	}
+	fmt.Fprintln(w)
+}
+
+func publishedDate(publishedAt string) string {
+	if len(publishedAt) >= len("2006-01-02") {
+		return publishedAt[:len("2006-01-02")]
+	}
+	return publishedAt
+}
+
 func printProviderMetadata(w io.Writer, provider app.Provider, website string) {
 	fmt.Fprintf(w, "Provider: %s\n", provider.Source)
 	fmt.Fprintf(w, "Version: %s\n", provider.LatestVersion)
@@ -350,6 +407,16 @@ func providerWebsiteURL(provider app.Provider) string {
 	}
 
 	return fmt.Sprintf("https://registry.terraform.io/providers/%s/%s/%s", parts[0], parts[1], version)
+}
+
+func providerWebsiteURLWithoutVersion(provider app.Provider) string {
+	source := strings.TrimPrefix(provider.Source, "registry.terraform.io/")
+	parts := strings.Split(source, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("https://registry.terraform.io/providers/%s/%s", parts[0], parts[1])
 }
 
 func providerDocsWebsiteURL(provider app.Provider) string {

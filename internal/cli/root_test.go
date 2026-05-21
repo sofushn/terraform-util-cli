@@ -45,6 +45,15 @@ func execute(args ...string) (string, string, error) {
 			Source:   "https://github.com/hashicorp/terraform-provider-aws/blob/v6.46.0/website/docs/r/vpc.html.markdown",
 			Website:  "https://registry.terraform.io/providers/hashicorp/aws/6.46.0/docs/resources/vpc",
 		},
+		versions: []app.ProviderVersion{{
+			Provider:    app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
+			Version:     "6.46.0",
+			PublishedAt: "2026-05-20T18:00:00Z",
+		}, {
+			Provider:    app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
+			Version:     "6.45.0",
+			PublishedAt: "2026-05-13T18:00:00Z",
+		}},
 	}, args...)
 }
 
@@ -101,6 +110,7 @@ func TestRootHelpWorks(t *testing.T) {
 		"Terraform Project Commands",
 		"search",
 		"docs",
+		"versions",
 		"add",
 		"--details",
 	} {
@@ -133,6 +143,11 @@ func TestDocumentedCommandsAcceptValidArguments(t *testing.T) {
 			name: "docs path",
 			args: []string{"docs", "aws", "resource/aws_vpc"},
 			want: "# Resource: aws_vpc\n",
+		},
+		{
+			name: "versions",
+			args: []string{"versions", "aws"},
+			want: "version\n6.46.0\n6.45.0\n",
 		},
 	}
 
@@ -589,11 +604,32 @@ func TestDocsListDetailsOutputIncludesProviderWebsite(t *testing.T) {
 	}
 }
 
+func TestVersionsDetailsOutputIncludesProviderWebsiteAndPublishedDates(t *testing.T) {
+	stdout, _, err := execute("--details", "versions", "aws")
+	if err != nil {
+		t.Fatalf("expected versions details to succeed: %v", err)
+	}
+
+	for _, want := range []string{
+		"provider: registry.terraform.io/hashicorp/aws",
+		"website: https://registry.terraform.io/providers/hashicorp/aws",
+		"version",
+		"published",
+		"6.46.0",
+		"2026-05-20",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected versions details output to contain %q, got:\n%s", want, stdout)
+		}
+	}
+}
+
 type fakeService struct {
 	providers     []app.Provider
 	projectResult app.ProjectResult
 	docItems      []app.DocItem
 	docPage       app.DocPage
+	versions      []app.ProviderVersion
 	err           error
 }
 
@@ -647,6 +683,13 @@ func (s fakeService) GetProviderDoc(ctx context.Context, provider string, docsPa
 		return app.DocPage{}, s.err
 	}
 	return s.docPage, nil
+}
+
+func (s fakeService) ListProviderVersions(ctx context.Context, provider string) ([]app.ProviderVersion, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.versions, nil
 }
 
 func (s fakeService) AddProvider(ctx context.Context, cwd string, provider string, versionConstraint string) (app.ProjectResult, error) {

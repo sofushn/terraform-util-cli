@@ -408,8 +408,9 @@ type v2ProviderWithVersionsResponse struct {
 		ID         string `json:"id"`
 		Type       string `json:"type"`
 		Attributes struct {
-			Tag     string `json:"tag"`
-			Version string `json:"version"`
+			PublishedAt string `json:"published-at"`
+			Tag         string `json:"tag"`
+			Version     string `json:"version"`
 		} `json:"attributes"`
 	} `json:"included"`
 }

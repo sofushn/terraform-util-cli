@@ -13,6 +13,9 @@ tracks planned follow-up work.
 - Search prints result pages progressively instead of waiting for every page to load.
 - Stable-width search output with `true` in the `verified` column for verified providers.
 - Detailed search output includes downloads and provider tier.
+- Provider versions command:
+  - `terraform-util versions <provider>`
+  - `terraform-util --details versions <provider>`
 - Detailed output flag:
   - `--details`
   - `-d`
@@ -41,6 +44,4 @@ tracks planned follow-up work.
   - `-v <version>`
   - `--latest`
 - Default docs version selection from matching `required_providers` entries in the current Terraform project.
-- Provider versions command:
-  - `terraform-util versions <provider>`
 - Registry-only module support for `search`, `docs`, and `versions`.

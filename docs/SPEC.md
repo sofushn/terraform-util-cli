@@ -33,6 +33,7 @@ terraform-util
 
 ```sh
 terraform-util search <provider>
+terraform-util versions <provider>
 terraform-util add <provider>
 terraform-util remove <provider>
 terraform-util update <provider>
@@ -112,6 +113,36 @@ Selection ranking should prefer:
 3. Verified providers.
 4. Download count.
 5. Text relevance.
+
+### `versions <provider>`
+
+List all known versions for a provider, ordered newest first.
+
+Example:
+
+```sh
+terraform-util versions aws
+```
+
+Example output:
+
+```text
+version
+6.46.0
+6.45.0
+6.44.0
+```
+
+With `--details`, include provider metadata and publish dates:
+
+```text
+provider: registry.terraform.io/hashicorp/aws
+website: https://registry.terraform.io/providers/hashicorp/aws
+
+version  published
+6.46.0   2026-05-20
+6.45.0   2026-05-13
+```
 
 ### `add <provider>`
 
