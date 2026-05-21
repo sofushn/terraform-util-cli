@@ -87,7 +87,11 @@ func RemoveProvider(cwd string, providerInput string) (Result, error) {
 	}
 
 	for _, file := range files {
-		if removeRequiredProvider(file.file.Body(), provider.LocalName) {
+		changed, source := removeRequiredProvider(file.file.Body(), provider.LocalName)
+		if source != "" {
+			provider.Source = source
+		}
+		if changed {
 			file.changed = true
 		}
 		if removeEmptyProviderBlocks(file.file.Body(), provider.LocalName) {
@@ -120,7 +124,11 @@ func UpdateProvider(cwd string, providerInput string, opts UpdateOptions) (Resul
 
 	updated := false
 	for _, file := range files {
-		if updateRequiredProviderVersion(file.file.Body(), provider.LocalName, opts.VersionConstraint) {
+		changed, err := updateRequiredProviderVersion(file.file.Body(), provider, opts.VersionConstraint)
+		if err != nil {
+			return Result{}, err
+		}
+		if changed {
 			file.changed = true
 			updated = true
 		}
@@ -269,20 +277,24 @@ func upsertRequiredProvider(body *hclwrite.Body, provider Provider, versionConst
 	return nil
 }
 
-func removeRequiredProvider(body *hclwrite.Body, localName string) bool {
+func removeRequiredProvider(body *hclwrite.Body, localName string) (bool, string) {
 	changed := false
+	source := ""
 	for _, block := range body.Blocks() {
 		if block.Type() != "terraform" {
 			continue
 		}
 		for _, nested := range block.Body().Blocks() {
 			if nested.Type() == "required_providers" && nested.Body().GetAttribute(localName) != nil {
+				if parsedSource, _ := providerSource(nested.Body().GetAttribute(localName)); parsedSource != "" {
+					source = parsedSource
+				}
 				nested.Body().RemoveAttribute(localName)
 				changed = true
 			}
 		}
 	}
-	return changed
+	return changed, source
 }
 
 func removeEmptyProviderBlocks(body *hclwrite.Body, localName string) bool {
@@ -300,7 +312,7 @@ func removeEmptyProviderBlocks(body *hclwrite.Body, localName string) bool {
 	return changed
 }
 
-func updateRequiredProviderVersion(body *hclwrite.Body, localName string, constraint string) bool {
+func updateRequiredProviderVersion(body *hclwrite.Body, provider Provider, constraint string) (bool, error) {
 	updated := false
 	for _, block := range body.Blocks() {
 		if block.Type() != "terraform" {
@@ -310,20 +322,23 @@ func updateRequiredProviderVersion(body *hclwrite.Body, localName string, constr
 			if nested.Type() != "required_providers" {
 				continue
 			}
-			attr := nested.Body().GetAttribute(localName)
+			attr := nested.Body().GetAttribute(provider.LocalName)
 			if attr == nil {
 				continue
 			}
 
 			source, _ := providerSource(attr)
 			if source == "" {
-				source = "hashicorp/" + localName
+				source = provider.Source
 			}
-			nested.Body().SetAttributeValue(localName, providerValue(source, constraint))
+			if source != provider.Source {
+				return false, fmt.Errorf("provider %q already uses source %q", provider.LocalName, source)
+			}
+			nested.Body().SetAttributeValue(provider.LocalName, providerValue(source, constraint))
 			updated = true
 		}
 	}
-	return updated
+	return updated, nil
 }
 
 func requiredProvidersBody(body *hclwrite.Body, create bool) *hclwrite.Body {

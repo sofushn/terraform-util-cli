@@ -20,6 +20,7 @@ type options struct {
 
 type providerSearcher interface {
 	SearchProviders(context.Context, string) ([]registry.Provider, error)
+	ResolveProvider(context.Context, string) (registry.Provider, error)
 }
 
 type dependencies struct {
@@ -52,9 +53,9 @@ func newRootCommand(deps dependencies) *cobra.Command {
 	rootCmd.PersistentFlags().BoolVar(&opts.quiet, "quiet", false, "suppress non-essential output")
 
 	rootCmd.AddCommand(newSearchCommand(opts, deps.searcher))
-	rootCmd.AddCommand(newAddCommand(opts))
+	rootCmd.AddCommand(newAddCommand(opts, deps.searcher))
 	rootCmd.AddCommand(newRemoveCommand(opts))
-	rootCmd.AddCommand(newUpdateCommand(opts))
+	rootCmd.AddCommand(newUpdateCommand(opts, deps.searcher))
 	rootCmd.AddCommand(newDocsCommand(opts))
 
 	return rootCmd
@@ -108,7 +109,7 @@ func newSearchCommand(opts *options, searcher providerSearcher) *cobra.Command {
 	}
 }
 
-func newAddCommand(opts *options) *cobra.Command {
+func newAddCommand(opts *options, searcher providerSearcher) *cobra.Command {
 	var version string
 
 	cmd := &cobra.Command{
@@ -121,7 +122,12 @@ func newAddCommand(opts *options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := project.AddProvider(cwd, args[0], project.AddOptions{VersionConstraint: version})
+			resolvedProvider, err := searcher.ResolveProvider(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			providerInput := resolvedProvider.Namespace + "/" + resolvedProvider.Name
+			result, err := project.AddProvider(cwd, providerInput, project.AddOptions{VersionConstraint: version})
 			if err != nil {
 				return err
 			}
@@ -167,7 +173,7 @@ func newRemoveCommand(opts *options) *cobra.Command {
 	}
 }
 
-func newUpdateCommand(opts *options) *cobra.Command {
+func newUpdateCommand(opts *options, searcher providerSearcher) *cobra.Command {
 	var constraint string
 
 	cmd := &cobra.Command{
@@ -180,7 +186,12 @@ func newUpdateCommand(opts *options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := project.UpdateProvider(cwd, args[0], project.UpdateOptions{VersionConstraint: constraint})
+			resolvedProvider, err := searcher.ResolveProvider(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			providerInput := resolvedProvider.Namespace + "/" + resolvedProvider.Name
+			result, err := project.UpdateProvider(cwd, providerInput, project.UpdateOptions{VersionConstraint: constraint})
 			if err != nil {
 				return err
 			}

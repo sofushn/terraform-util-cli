@@ -145,6 +145,47 @@ provider "aws" {
 	}
 }
 
+func TestRemoveProviderReportsLocalSource(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "main.tf", `terraform {
+  required_providers {
+    aws = {
+      source = "popular/aws"
+    }
+  }
+}
+`)
+
+	result, err := RemoveProvider(dir, "aws")
+	if err != nil {
+		t.Fatalf("remove provider: %v", err)
+	}
+	if result.Provider.Source != "popular/aws" {
+		t.Fatalf("expected local source, got %#v", result.Provider)
+	}
+}
+
+func TestUpdateProviderRejectsSourceConflict(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "main.tf", `terraform {
+  required_providers {
+    aws = {
+      source  = "example/aws"
+      version = "~> 1.0"
+    }
+  }
+}
+`)
+
+	_, err := UpdateProvider(dir, "hashicorp/aws", UpdateOptions{VersionConstraint: "~> 6.0"})
+	if err == nil {
+		t.Fatalf("expected source conflict")
+	}
+	if !strings.Contains(err.Error(), `already uses source "example/aws"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestInvalidTerraformFailsBeforeWriting(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "main.tf", `terraform {`)

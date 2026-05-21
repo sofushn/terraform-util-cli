@@ -3,16 +3,37 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"terraform-registry-cli/internal/project"
 	"terraform-registry-cli/internal/registry"
 )
 
+var errFakeSearch = errors.New("provider not found")
+
 func execute(args ...string) (string, string, error) {
-	return executeWithSearcher(registry.NewClient(), args...)
+	return executeWithSearcher(fakeSearcher{
+		providers: []registry.Provider{{
+			Namespace:     "hashicorp",
+			Name:          "aws",
+			DisplayName:   "aws",
+			LatestVersion: "6.46.0",
+			Verified:      true,
+			Downloads:     500,
+		}},
+		resolved: registry.Provider{
+			Namespace:     "hashicorp",
+			Name:          "aws",
+			DisplayName:   "aws",
+			LatestVersion: "6.46.0",
+			Verified:      true,
+			Downloads:     500,
+		},
+	}, args...)
 }
 
 func executeWithSearcher(searcher providerSearcher, args ...string) (string, string, error) {
@@ -250,6 +271,61 @@ func TestProjectCommandsEditTerraformFiles(t *testing.T) {
 	}
 }
 
+func TestAddUsesResolvedProviderSource(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	searcher := fakeSearcher{resolved: registry.Provider{
+		Namespace: "popular",
+		Name:      "aws",
+		Downloads: 999,
+	}}
+
+	stdout, _, err := executeWithSearcher(searcher, "add", "aws", "--version", "~> 1.0")
+	if err != nil {
+		t.Fatalf("expected add to succeed: %v", err)
+	}
+	if !strings.Contains(stdout, "Added provider popular/aws") {
+		t.Fatalf("expected resolved source in output, got:\n%s", stdout)
+	}
+
+	versions, err := os.ReadFile(filepath.Join(dir, "versions.tf"))
+	if err != nil {
+		t.Fatalf("read versions.tf: %v", err)
+	}
+	if !strings.Contains(string(versions), `source  = "popular/aws"`) {
+		t.Fatalf("expected resolved source in versions.tf, got:\n%s", versions)
+	}
+}
+
+func TestAddAndUpdateFailWhenProviderCannotBeResolved(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	searcher := fakeSearcher{err: errFakeSearch}
+
+	if _, _, err := executeWithSearcher(searcher, "add", "missing"); err == nil {
+		t.Fatalf("expected add to fail when provider cannot be resolved")
+	}
+	if _, _, err := executeWithSearcher(searcher, "update", "missing", "--constraint", "~> 1.0"); err == nil {
+		t.Fatalf("expected update to fail when provider cannot be resolved")
+	}
+}
+
+func TestRemoveDoesNotVerifyProvider(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	if _, err := project.AddProvider(dir, "hashicorp/aws", project.AddOptions{}); err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	stdout, _, err := executeWithSearcher(fakeSearcher{err: errFakeSearch}, "remove", "aws")
+	if err != nil {
+		t.Fatalf("expected remove not to verify provider: %v", err)
+	}
+	if !strings.Contains(stdout, "Removed provider hashicorp/aws") {
+		t.Fatalf("unexpected remove output:\n%s", stdout)
+	}
+}
+
 func TestUpdateRequiresConstraint(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
@@ -448,9 +524,26 @@ func TestCommandSpecificFutureFlagsParse(t *testing.T) {
 
 type fakeSearcher struct {
 	providers []registry.Provider
+	resolved  registry.Provider
 	err       error
 }
 
 func (s fakeSearcher) SearchProviders(ctx context.Context, query string) ([]registry.Provider, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	return s.providers, s.err
+}
+
+func (s fakeSearcher) ResolveProvider(ctx context.Context, query string) (registry.Provider, error) {
+	if s.err != nil {
+		return registry.Provider{}, s.err
+	}
+	if s.resolved.Namespace != "" && s.resolved.Name != "" {
+		return s.resolved, nil
+	}
+	if len(s.providers) > 0 {
+		return s.providers[0], nil
+	}
+	return registry.Provider{}, errFakeSearch
 }

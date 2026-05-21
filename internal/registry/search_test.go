@@ -71,3 +71,53 @@ func TestSearchProvidersExactSource(t *testing.T) {
 		t.Fatalf("unexpected provider: %#v", providers[0])
 	}
 }
+
+func TestResolveProviderShortNameUsesMostDownloads(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/providers":
+			w.Write([]byte(`{
+				"data": [
+					{"attributes": {"full-name": "hashicorp/example", "namespace": "hashicorp", "name": "example", "alias": "example", "description": "", "downloads": 100, "tier": "official"}},
+					{"attributes": {"full-name": "popular/example", "namespace": "popular", "name": "example", "alias": "example", "description": "", "downloads": 999, "tier": "community"}}
+				]
+			}`))
+		case "/v1/providers/popular/example":
+			w.Write([]byte(`{"namespace":"popular","name":"example","alias":"example","version":"1.2.3","description":"Example","downloads":999,"tier":"community"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClientForBaseURL(server.URL)
+	provider, err := client.ResolveProvider(context.Background(), "example")
+	if err != nil {
+		t.Fatalf("resolve provider: %v", err)
+	}
+	if provider.Namespace != "popular" || provider.Name != "example" {
+		t.Fatalf("expected popular/example, got %#v", provider)
+	}
+	if provider.LatestVersion != "1.2.3" {
+		t.Fatalf("expected hydrated version, got %#v", provider)
+	}
+}
+
+func TestResolveProviderNamespacedUsesExactProvider(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/providers/hashicorp/aws" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Write([]byte(`{"namespace":"hashicorp","name":"aws","alias":"aws","version":"6.46.0","description":"AWS","downloads":500,"tier":"official"}`))
+	}))
+	defer server.Close()
+
+	client := NewClientForBaseURL(server.URL)
+	provider, err := client.ResolveProvider(context.Background(), "hashicorp/aws")
+	if err != nil {
+		t.Fatalf("resolve provider: %v", err)
+	}
+	if provider.Source != "registry.terraform.io/hashicorp/aws" {
+		t.Fatalf("unexpected provider: %#v", provider)
+	}
+}

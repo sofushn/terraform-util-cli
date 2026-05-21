@@ -11,6 +11,8 @@ This document tracks temporary implementation state. The product spec in [SPEC.m
   - `remove <provider>`
   - `update <provider> --constraint <constraint>`
 - Provider search through the Terraform Registry.
+- Registry-backed provider resolution for `add` and `update`; short names choose the matching provider with the highest download count.
+- `remove` stays local-only and does not verify against the registry.
 - Local `.tf` file edits using HashiCorp HCL tooling.
 - Tests for CLI parsing, provider search, and project file edits.
 
