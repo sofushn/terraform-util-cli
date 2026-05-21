@@ -45,7 +45,6 @@ terraform-registry docs <provider> <data|resource|function>/<name>
 Recommended global options:
 
 ```sh
---registry-url <url>
 --verbose
 --quiet
 ```
@@ -479,14 +478,12 @@ The first version may defer:
 - Provider functions docs, if registry support is inconsistent.
 - `remove`.
 - `update`.
-- Private registry authentication.
 - Advanced version constraint flags.
 
 ## Future Enhancements
 
 - `--version` for docs and provider edits.
 - `--provider-file` and `--versions-file` options.
-- Private registry authentication.
 - OpenTofu registry support.
 - Shell completions.
 - Provider docs full-text search.

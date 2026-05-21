@@ -1,24 +1,37 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
 	"terraform-registry-cli/internal/project"
+	"terraform-registry-cli/internal/registry"
 
 	"github.com/spf13/cobra"
 )
 
 type options struct {
-	registryURL string
-	verbose     bool
-	quiet       bool
+	verbose bool
+	quiet   bool
+}
+
+type providerSearcher interface {
+	SearchProviders(context.Context, string) ([]registry.Provider, error)
+}
+
+type dependencies struct {
+	searcher providerSearcher
 }
 
 // NewRootCommand builds the terraform-registry command tree.
 func NewRootCommand() *cobra.Command {
+	return newRootCommand(dependencies{searcher: registry.NewClient()})
+}
+
+func newRootCommand(deps dependencies) *cobra.Command {
 	opts := &options{}
 
 	rootCmd := &cobra.Command{
@@ -35,11 +48,10 @@ func NewRootCommand() *cobra.Command {
 		&cobra.Group{ID: "project", Title: "Terraform Project Commands"},
 	)
 
-	rootCmd.PersistentFlags().StringVar(&opts.registryURL, "registry-url", "https://registry.terraform.io", "Terraform Registry base URL")
 	rootCmd.PersistentFlags().BoolVar(&opts.verbose, "verbose", false, "show additional output")
 	rootCmd.PersistentFlags().BoolVar(&opts.quiet, "quiet", false, "suppress non-essential output")
 
-	rootCmd.AddCommand(newSearchCommand(opts))
+	rootCmd.AddCommand(newSearchCommand(opts, deps.searcher))
 	rootCmd.AddCommand(newAddCommand(opts))
 	rootCmd.AddCommand(newRemoveCommand(opts))
 	rootCmd.AddCommand(newUpdateCommand(opts))
@@ -72,17 +84,25 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer) error {
 	return err
 }
 
-func newSearchCommand(opts *options) *cobra.Command {
+func newSearchCommand(opts *options, searcher providerSearcher) *cobra.Command {
 	return &cobra.Command{
 		Use:     "search <provider>",
 		Short:   "Search providers",
 		GroupID: "registry",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			providers, err := searcher.SearchProviders(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
 			if opts.quiet {
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "search provider: %s\n", args[0])
+			if len(providers) == 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "No providers found for %q\n", args[0])
+				return nil
+			}
+			printProviderSearchResults(cmd.OutOrStdout(), providers, opts.verbose)
 			return nil
 		},
 	}
@@ -250,6 +270,76 @@ func printChangedFiles(w io.Writer, changedFiles []string) {
 	for _, name := range changedFiles {
 		fmt.Fprintf(w, "  %s\n", name)
 	}
+}
+
+func printProviderSearchResults(w io.Writer, providers []registry.Provider, verbose bool) {
+	widths := searchColumnWidths(providers, verbose)
+	printSearchRow(w, widths, verbose, []string{"provider", "name", "version", "downloads", "verified"})
+	for _, provider := range providers {
+		verified := ""
+		if provider.Verified {
+			verified = "verified"
+		}
+
+		downloads := ""
+		if verbose {
+			downloads = fmt.Sprintf("%d", provider.Downloads)
+		}
+
+		printSearchRow(w, widths, verbose, []string{
+			provider.Namespace + "/" + provider.Name,
+			provider.DisplayName,
+			provider.LatestVersion,
+			downloads,
+			verified,
+		})
+	}
+}
+
+func searchColumnWidths(providers []registry.Provider, verbose bool) []int {
+	widths := []int{len("provider"), len("name"), len("version"), len("downloads"), len("verified")}
+
+	for _, provider := range providers {
+		values := []string{
+			provider.Namespace + "/" + provider.Name,
+			provider.DisplayName,
+			provider.LatestVersion,
+			fmt.Sprintf("%d", provider.Downloads),
+			"",
+		}
+		if provider.Verified {
+			values[4] = "verified"
+		}
+
+		indexes := []int{0, 1, 2, 4}
+		if verbose {
+			indexes = []int{0, 1, 2, 3, 4}
+		}
+		for _, i := range indexes {
+			if len(values[i]) > widths[i] {
+				widths[i] = len(values[i])
+			}
+		}
+	}
+
+	return widths
+}
+
+func printSearchRow(w io.Writer, widths []int, verbose bool, values []string) {
+	row := values
+	rowWidths := widths
+	if !verbose {
+		row = []string{values[0], values[1], values[2], values[4]}
+		rowWidths = []int{widths[0], widths[1], widths[2], widths[4]}
+	}
+
+	for i := 0; i < len(row); i++ {
+		if i > 0 {
+			fmt.Fprint(w, "  ")
+		}
+		fmt.Fprintf(w, "%-*s", rowWidths[i], row[i])
+	}
+	fmt.Fprintln(w)
 }
 
 const rootHelpTemplate = `{{with (or .Long .Short)}}{{.}}

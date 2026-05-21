@@ -2,17 +2,39 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"terraform-registry-cli/internal/registry"
 )
 
 func execute(args ...string) (string, string, error) {
+	return executeWithSearcher(registry.NewClient(), args...)
+}
+
+func executeWithSearcher(searcher providerSearcher, args ...string) (string, string, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	err := Execute(args, &stdout, &stderr)
+	cmd := newRootCommand(dependencies{searcher: searcher})
+	cmd.SetArgs(args)
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	executedCmd, err := cmd.ExecuteC()
+	if err != nil {
+		helpCmd := executedCmd
+		if helpCmd == nil {
+			helpCmd = cmd
+		}
+
+		stderr.WriteString("Error: " + err.Error() + "\n\n")
+		helpCmd.SetOut(&stderr)
+		_ = helpCmd.Help()
+	}
 
 	return stdout.String(), stderr.String(), err
 }
@@ -47,7 +69,6 @@ func TestRootHelpWorks(t *testing.T) {
 		"search",
 		"docs",
 		"add",
-		"--registry-url",
 		"--verbose",
 	} {
 		if !strings.Contains(stdout, want) {
@@ -59,6 +80,7 @@ func TestRootHelpWorks(t *testing.T) {
 		"--timeout",
 		"--cache-dir",
 		"--no-cache",
+		"--registry-url",
 		"help        Help about any command",
 	} {
 		if strings.Contains(stdout, unwanted) {
@@ -73,11 +95,6 @@ func TestDocumentedCommandsAcceptValidArguments(t *testing.T) {
 		args []string
 		want string
 	}{
-		{
-			name: "search",
-			args: []string{"search", "aws"},
-			want: "search provider: aws\n",
-		},
 		{
 			name: "docs path",
 			args: []string{"docs", "aws", "resource/aws_vpc"},
@@ -95,6 +112,67 @@ func TestDocumentedCommandsAcceptValidArguments(t *testing.T) {
 				t.Fatalf("unexpected stdout:\nwant: %q\n got: %q", tt.want, stdout)
 			}
 		})
+	}
+}
+
+func TestSearchCommandPrintsRegistryResults(t *testing.T) {
+	searcher := fakeSearcher{providers: []registry.Provider{{
+		Namespace:     "hashicorp",
+		Name:          "aws",
+		DisplayName:   "aws",
+		LatestVersion: "6.46.0",
+		Verified:      true,
+		Downloads:     500,
+	}, {
+		Namespace:     "verylongnamespace",
+		Name:          "custom",
+		DisplayName:   "Custom",
+		LatestVersion: "1.0.0",
+		Downloads:     25,
+	}}}
+
+	stdout, _, err := executeWithSearcher(searcher, "search", "aws")
+	if err != nil {
+		t.Fatalf("expected search to succeed: %v", err)
+	}
+
+	want := "provider                  name    version  verified\n" +
+		"hashicorp/aws             aws     6.46.0   verified\n" +
+		"verylongnamespace/custom  Custom  1.0.0            \n"
+	if stdout != want {
+		t.Fatalf("unexpected stdout:\nwant: %q\n got: %q", want, stdout)
+	}
+}
+
+func TestSearchCommandVerbosePrintsDownloads(t *testing.T) {
+	searcher := fakeSearcher{providers: []registry.Provider{{
+		Namespace:     "hashicorp",
+		Name:          "aws",
+		DisplayName:   "aws",
+		LatestVersion: "6.46.0",
+		Verified:      true,
+		Downloads:     500,
+	}}}
+
+	stdout, _, err := executeWithSearcher(searcher, "--verbose", "search", "aws")
+	if err != nil {
+		t.Fatalf("expected search to succeed: %v", err)
+	}
+
+	want := "provider       name  version  downloads  verified\n" +
+		"hashicorp/aws  aws   6.46.0   500        verified\n"
+	if stdout != want {
+		t.Fatalf("unexpected stdout:\nwant: %q\n got: %q", want, stdout)
+	}
+}
+
+func TestSearchCommandHandlesNoResults(t *testing.T) {
+	stdout, _, err := executeWithSearcher(fakeSearcher{}, "search", "missing")
+	if err != nil {
+		t.Fatalf("expected search to succeed: %v", err)
+	}
+	if stdout != "No providers found for \"missing\"\n" {
+		t.Fatalf("unexpected stdout: %q", stdout)
 	}
 }
 
@@ -313,8 +391,16 @@ func TestDocsHelpShowsListSubcommand(t *testing.T) {
 }
 
 func TestGlobalFlagsParse(t *testing.T) {
-	stdout, _, err := execute(
-		"--registry-url", "https://example.com",
+	searcher := fakeSearcher{providers: []registry.Provider{{
+		Namespace:     "hashicorp",
+		Name:          "aws",
+		DisplayName:   "aws",
+		LatestVersion: "6.46.0",
+		Verified:      true,
+		Downloads:     500,
+	}}}
+
+	stdout, _, err := executeWithSearcher(searcher,
 		"--verbose",
 		"search",
 		"aws",
@@ -323,7 +409,7 @@ func TestGlobalFlagsParse(t *testing.T) {
 		t.Fatalf("expected command with global flags to succeed: %v", err)
 	}
 
-	if stdout != "search provider: aws\n" {
+	if stdout != "provider       name  version  downloads  verified\nhashicorp/aws  aws   6.46.0   500        verified\n" {
 		t.Fatalf("unexpected stdout: %q", stdout)
 	}
 }
@@ -358,4 +444,13 @@ func TestCommandSpecificFutureFlagsParse(t *testing.T) {
 			}
 		})
 	}
+}
+
+type fakeSearcher struct {
+	providers []registry.Provider
+	err       error
+}
+
+func (s fakeSearcher) SearchProviders(ctx context.Context, query string) ([]registry.Provider, error) {
+	return s.providers, s.err
 }
