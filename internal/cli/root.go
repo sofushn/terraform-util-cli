@@ -3,7 +3,10 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
+
+	"terraform-registry-cli/internal/project"
 
 	"github.com/spf13/cobra"
 )
@@ -94,10 +97,23 @@ func newAddCommand(opts *options) *cobra.Command {
 		GroupID: "project",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			result, err := project.AddProvider(cwd, args[0], project.AddOptions{VersionConstraint: version})
+			if err != nil {
+				return err
+			}
 			if opts.quiet {
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "add provider: %s\n", args[0])
+			fmt.Fprintf(cmd.OutOrStdout(), "Added provider %s", result.Provider.Source)
+			if version != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), " (%s)", version)
+			}
+			fmt.Fprintln(cmd.OutOrStdout())
+			printChangedFiles(cmd.OutOrStdout(), result.ChangedFiles)
 			return nil
 		},
 	}
@@ -113,10 +129,19 @@ func newRemoveCommand(opts *options) *cobra.Command {
 		GroupID: "project",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			result, err := project.RemoveProvider(cwd, args[0])
+			if err != nil {
+				return err
+			}
 			if opts.quiet {
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "remove provider: %s\n", args[0])
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed provider %s\n", result.Provider.Source)
+			printChangedFiles(cmd.OutOrStdout(), result.ChangedFiles)
 			return nil
 		},
 	}
@@ -131,10 +156,19 @@ func newUpdateCommand(opts *options) *cobra.Command {
 		GroupID: "project",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			result, err := project.UpdateProvider(cwd, args[0], project.UpdateOptions{VersionConstraint: constraint})
+			if err != nil {
+				return err
+			}
 			if opts.quiet {
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "update provider: %s\n", args[0])
+			fmt.Fprintf(cmd.OutOrStdout(), "Updated provider %s (%s)\n", result.Provider.Source, constraint)
+			printChangedFiles(cmd.OutOrStdout(), result.ChangedFiles)
 			return nil
 		},
 	}
@@ -204,6 +238,18 @@ func isDocsPath(path string) bool {
 		}
 	}
 	return false
+}
+
+func printChangedFiles(w io.Writer, changedFiles []string) {
+	if len(changedFiles) == 0 {
+		fmt.Fprintln(w, "Changed: none")
+		return
+	}
+
+	fmt.Fprintln(w, "Changed:")
+	for _, name := range changedFiles {
+		fmt.Fprintf(w, "  %s\n", name)
+	}
 }
 
 const rootHelpTemplate = `{{with (or .Long .Short)}}{{.}}

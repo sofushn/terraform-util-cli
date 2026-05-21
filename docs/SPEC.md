@@ -148,7 +148,7 @@ Version constraint policy:
 
 - Resolve the latest provider version from the registry.
 - Default to a pessimistic minor constraint, such as `~> 6.0`.
-- Allow an override in a later version with `--version`.
+- Allow an override with `--version`.
 
 If multiple `.tf` files exist, the CLI should prefer:
 

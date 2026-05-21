@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -13,6 +15,23 @@ func execute(args ...string) (string, string, error) {
 	err := Execute(args, &stdout, &stderr)
 
 	return stdout.String(), stderr.String(), err
+}
+
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	})
 }
 
 func TestRootHelpWorks(t *testing.T) {
@@ -60,21 +79,6 @@ func TestDocumentedCommandsAcceptValidArguments(t *testing.T) {
 			want: "search provider: aws\n",
 		},
 		{
-			name: "add",
-			args: []string{"add", "aws"},
-			want: "add provider: aws\n",
-		},
-		{
-			name: "remove",
-			args: []string{"remove", "aws"},
-			want: "remove provider: aws\n",
-		},
-		{
-			name: "update",
-			args: []string{"update", "aws"},
-			want: "update provider: aws\n",
-		},
-		{
 			name: "docs path",
 			args: []string{"docs", "aws", "resource/aws_vpc"},
 			want: "docs provider: aws path: resource/aws_vpc\n",
@@ -91,6 +95,89 @@ func TestDocumentedCommandsAcceptValidArguments(t *testing.T) {
 				t.Fatalf("unexpected stdout:\nwant: %q\n got: %q", tt.want, stdout)
 			}
 		})
+	}
+}
+
+func TestProjectCommandsEditTerraformFiles(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	stdout, _, err := execute("add", "aws", "--version", "~> 6.0")
+	if err != nil {
+		t.Fatalf("expected add to succeed: %v", err)
+	}
+	for _, want := range []string{
+		"Added provider hashicorp/aws (~> 6.0)",
+		"versions.tf",
+		"providers.tf",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected add output to contain %q, got:\n%s", want, stdout)
+		}
+	}
+
+	versions, err := os.ReadFile(filepath.Join(dir, "versions.tf"))
+	if err != nil {
+		t.Fatalf("read versions.tf: %v", err)
+	}
+	for _, want := range []string{
+		"required_providers",
+		"aws",
+		`source  = "hashicorp/aws"`,
+		`version = "~> 6.0"`,
+	} {
+		if !strings.Contains(string(versions), want) {
+			t.Fatalf("expected versions.tf to contain %q, got:\n%s", want, versions)
+		}
+	}
+
+	providers, err := os.ReadFile(filepath.Join(dir, "providers.tf"))
+	if err != nil {
+		t.Fatalf("read providers.tf: %v", err)
+	}
+	if !strings.Contains(string(providers), `provider "aws"`) {
+		t.Fatalf("expected providers.tf to contain provider block, got:\n%s", providers)
+	}
+
+	stdout, _, err = execute("update", "aws", "--constraint", "~> 6.1")
+	if err != nil {
+		t.Fatalf("expected update to succeed: %v", err)
+	}
+	if !strings.Contains(stdout, "Updated provider hashicorp/aws (~> 6.1)") {
+		t.Fatalf("unexpected update stdout:\n%s", stdout)
+	}
+
+	versions, err = os.ReadFile(filepath.Join(dir, "versions.tf"))
+	if err != nil {
+		t.Fatalf("read versions.tf: %v", err)
+	}
+	if !strings.Contains(string(versions), `version = "~> 6.1"`) {
+		t.Fatalf("expected updated constraint, got:\n%s", versions)
+	}
+
+	stdout, _, err = execute("remove", "aws")
+	if err != nil {
+		t.Fatalf("expected remove to succeed: %v", err)
+	}
+	if !strings.Contains(stdout, "Removed provider hashicorp/aws") {
+		t.Fatalf("unexpected remove stdout:\n%s", stdout)
+	}
+
+	providers, err = os.ReadFile(filepath.Join(dir, "providers.tf"))
+	if err != nil {
+		t.Fatalf("read providers.tf: %v", err)
+	}
+	if strings.Contains(string(providers), `provider "aws"`) {
+		t.Fatalf("expected provider block to be removed, got:\n%s", providers)
+	}
+}
+
+func TestUpdateRequiresConstraint(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	if _, _, err := execute("update", "aws"); err == nil {
+		t.Fatalf("expected update without --constraint to fail")
 	}
 }
 
@@ -252,14 +339,20 @@ func TestQuietSuppressesPlaceholderOutput(t *testing.T) {
 }
 
 func TestCommandSpecificFutureFlagsParse(t *testing.T) {
-	tests := [][]string{
-		{"add", "aws", "--version", "~> 6.0"},
-		{"update", "aws", "--constraint", "~> 6.0"},
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "add version", args: []string{"add", "aws", "--version", "~> 6.0"}},
+		{name: "update constraint", args: []string{"update", "aws", "--constraint", "~> 6.1"}},
 	}
 
-	for _, args := range tests {
-		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			_, _, err := execute(args...)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := execute(tt.args...)
 			if err != nil {
 				t.Fatalf("expected command-specific flag to parse: %v", err)
 			}

@@ -1,8 +1,8 @@
 # terraform-registry-cli
 
-CLI skeleton for `terraform-registry`, a future Terraform Registry documentation and provider helper.
+CLI for Terraform Registry documentation and provider helpers.
 
-Current status: the command interface is implemented, but registry lookup, Terraform file editing, and docs fetching are not implemented yet. Commands currently print deterministic placeholder output.
+Current status: Terraform project commands (`add`, `remove`, `update`) edit local `.tf` files. Registry lookup and docs fetching are not implemented yet, so `search` and `docs` commands still print deterministic placeholder output.
 
 ## Requirements
 
@@ -26,9 +26,9 @@ Run the built CLI:
 
 ```sh
 ./terraform-registry search aws
-./terraform-registry add aws
+./terraform-registry add aws --version "~> 6.0"
 ./terraform-registry remove aws
-./terraform-registry update aws
+./terraform-registry update aws --constraint "~> 6.1"
 ./terraform-registry docs list aws
 ./terraform-registry docs list aws vpc
 ./terraform-registry docs aws resource/aws_vpc
