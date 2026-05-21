@@ -1,2 +1,10 @@
+# Local agent workspace
+.agents/
+
+# Built CLI binary
 terraform-registry
-.agents
+
+# Go build and release outputs
+dist/
+*.test
+coverage.out
