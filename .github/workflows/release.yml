@@ -18,6 +18,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify tag is on main
+        run: |
+          git fetch origin main --prune
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Release tags must point to commits on main."
+            exit 1
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
