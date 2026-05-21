@@ -145,6 +145,36 @@ func TestSearchProvidersDelegatesToResolver(t *testing.T) {
 	}
 }
 
+func TestStreamSearchProvidersDelegatesToResolver(t *testing.T) {
+	resolver := &fakeResolver{
+		providers: []Provider{{
+			Source:        "registry.terraform.io/hashicorp/aws",
+			Namespace:     "hashicorp",
+			Name:          "aws",
+			DisplayName:   "aws",
+			LatestVersion: "6.46.0",
+			Downloads:     1,
+			Verified:      true,
+		}},
+	}
+	service := NewService(resolver, resolver, &fakeEditor{})
+
+	var pages [][]Provider
+	err := service.StreamSearchProviders(context.Background(), "aws", func(providers []Provider) error {
+		pages = append(pages, providers)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("stream search providers: %v", err)
+	}
+	if resolver.streamSearchCalls != 1 || resolver.searchQuery != "aws" {
+		t.Fatalf("expected resolver stream search call, got calls=%d query=%q", resolver.streamSearchCalls, resolver.searchQuery)
+	}
+	if len(pages) != 1 || len(pages[0]) != 1 || pages[0][0].Source != "registry.terraform.io/hashicorp/aws" {
+		t.Fatalf("unexpected pages: %#v", pages)
+	}
+}
+
 func TestListProviderDocsResolvesAndFilters(t *testing.T) {
 	resolver := &fakeResolver{
 		resolved: Provider{
@@ -173,6 +203,40 @@ func TestListProviderDocsResolvesAndFilters(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].Name != "aws_vpc" || items[0].Provider.Source != "registry.terraform.io/hashicorp/aws" {
 		t.Fatalf("unexpected filtered docs: %#v", items)
+	}
+}
+
+func TestStreamProviderDocsResolvesAndFilters(t *testing.T) {
+	resolver := &fakeResolver{
+		resolved: Provider{
+			Source:        "registry.terraform.io/hashicorp/aws",
+			Namespace:     "hashicorp",
+			Name:          "aws",
+			LatestVersion: "6.46.0",
+		},
+		docs: []DocItem{{
+			Kind: "resource",
+			Name: "aws_vpc",
+		}, {
+			Kind: "data",
+			Name: "aws_ami",
+		}},
+	}
+	service := NewService(resolver, resolver, &fakeEditor{})
+
+	var pages [][]DocItem
+	err := service.StreamProviderDocs(context.Background(), "aws", "vpc", func(items []DocItem) error {
+		pages = append(pages, items)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("stream provider docs: %v", err)
+	}
+	if resolver.resolveCalls != 1 || resolver.streamDocsCalls != 1 {
+		t.Fatalf("expected resolve and stream docs calls, got resolve=%d docs=%d", resolver.resolveCalls, resolver.streamDocsCalls)
+	}
+	if len(pages) != 1 || len(pages[0]) != 1 || pages[0][0].Name != "aws_vpc" || pages[0][0].Provider.Source != "registry.terraform.io/hashicorp/aws" {
+		t.Fatalf("unexpected streamed docs: %#v", pages)
 	}
 }
 
@@ -206,18 +270,20 @@ func TestGetProviderDocResolvesAndFetchesPath(t *testing.T) {
 }
 
 type fakeResolver struct {
-	providers     []Provider
-	resolved      Provider
-	docs          []DocItem
-	docPage       DocPage
-	err           error
-	searchCalls   int
-	searchQuery   string
-	resolveCalls  int
-	resolveQuery  string
-	listDocsCalls int
-	docKind       string
-	docName       string
+	providers         []Provider
+	resolved          Provider
+	docs              []DocItem
+	docPage           DocPage
+	err               error
+	searchCalls       int
+	streamSearchCalls int
+	searchQuery       string
+	resolveCalls      int
+	resolveQuery      string
+	listDocsCalls     int
+	streamDocsCalls   int
+	docKind           string
+	docName           string
 }
 
 func (r *fakeResolver) SearchProviders(ctx context.Context, query string) ([]Provider, error) {
@@ -227,6 +293,15 @@ func (r *fakeResolver) SearchProviders(ctx context.Context, query string) ([]Pro
 		return nil, r.err
 	}
 	return r.providers, nil
+}
+
+func (r *fakeResolver) StreamSearchProviders(ctx context.Context, query string, yield func([]Provider) error) error {
+	r.streamSearchCalls++
+	r.searchQuery = query
+	if r.err != nil {
+		return r.err
+	}
+	return yield(r.providers)
 }
 
 func (r *fakeResolver) ResolveProvider(ctx context.Context, query string) (Provider, error) {
@@ -249,6 +324,19 @@ func (r *fakeResolver) ListProviderDocs(ctx context.Context, provider Provider) 
 		out[i].Provider = provider
 	}
 	return out, nil
+}
+
+func (r *fakeResolver) StreamProviderDocs(ctx context.Context, provider Provider, yield func([]DocItem) error) error {
+	r.streamDocsCalls++
+	if r.err != nil {
+		return r.err
+	}
+	out := make([]DocItem, len(r.docs))
+	copy(out, r.docs)
+	for i := range out {
+		out[i].Provider = provider
+	}
+	return yield(out)
 }
 
 func (r *fakeResolver) GetProviderDoc(ctx context.Context, provider Provider, kind string, name string) (DocPage, error) {

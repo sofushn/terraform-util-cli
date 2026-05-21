@@ -77,11 +77,11 @@ provider       name  version  verified
 hashicorp/aws  aws   6.46.0   true
 ```
 
-Detailed search also includes downloads:
+Detailed search also includes downloads and provider tier:
 
 ```text
-provider       name  version  downloads  verified
-hashicorp/aws  aws   6.46.0   6254226571 true
+provider       name  version  downloads   tier      verified
+hashicorp/aws  aws   6.46.0   6254226571  official  true
 ```
 
 Verified providers display `true`; unverified providers have an empty value in that column.

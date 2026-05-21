@@ -34,12 +34,11 @@ func (c Client) ListProviderDocs(ctx context.Context, provider Provider) ([]DocI
 	}
 
 	var items []DocItem
-	for _, category := range []string{"resources", "data-sources", "functions"} {
-		docs, err := c.listProviderDocsForCategory(ctx, versionID, provider.Name, category)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, docs...)
+	if err := c.streamProviderDocsForVersion(ctx, versionID, provider.Name, func(page []DocItem) error {
+		items = append(items, page...)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	sort.SliceStable(items, func(i, j int) bool {
@@ -52,44 +51,77 @@ func (c Client) ListProviderDocs(ctx context.Context, provider Provider) ([]DocI
 	return items, nil
 }
 
-func (c Client) listProviderDocsForCategory(ctx context.Context, versionID string, providerName string, category string) ([]DocItem, error) {
+func (c Client) StreamProviderDocs(ctx context.Context, provider Provider, yield func([]DocItem) error) error {
+	versionID, _, err := c.providerVersionID(ctx, provider.Namespace, provider.Name, provider.LatestVersion)
+	if err != nil {
+		return err
+	}
+
+	return c.streamProviderDocsForVersion(ctx, versionID, provider.Name, yield)
+}
+
+func (c Client) streamProviderDocsForVersion(ctx context.Context, versionID string, providerName string, yield func([]DocItem) error) error {
+	for _, category := range []string{"resources", "data-sources", "functions"} {
+		if err := c.streamProviderDocsForCategory(ctx, versionID, providerName, category, yield); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c Client) streamProviderDocsForCategory(ctx context.Context, versionID string, providerName string, category string, yield func([]DocItem) error) error {
 	const pageSize = 100
 
-	var items []DocItem
 	for pageNumber := 1; ; pageNumber++ {
-		endpoint, err := url.Parse(c.BaseURL + "/v2/provider-docs")
+		items, page, err := c.listProviderDocsPage(ctx, versionID, providerName, category, pageNumber, pageSize)
 		if err != nil {
-			return nil, err
-		}
-		params := endpoint.Query()
-		params.Set("filter[provider-version]", versionID)
-		params.Set("filter[category]", category)
-		params.Set("filter[language]", "hcl")
-		params.Set("page[size]", fmt.Sprintf("%d", pageSize))
-		params.Set("page[number]", fmt.Sprintf("%d", pageNumber))
-		endpoint.RawQuery = params.Encode()
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
-		if err != nil {
-			return nil, err
+			return err
 		}
 
-		var response v2ProviderDocsResponse
-		if err := c.doJSON(req, &response); err != nil {
-			return nil, err
-		}
-
-		for _, doc := range response.Data {
-			item, ok := docItemFromAttributes(providerName, doc.Attributes)
-			if ok {
-				items = append(items, item)
+		if len(items) > 0 {
+			if err := yield(items); err != nil {
+				return err
 			}
 		}
 
-		if len(response.Data) < pageSize {
-			return items, nil
+		if page.isLast(pageNumber, pageSize) {
+			return nil
 		}
 	}
+}
+
+func (c Client) listProviderDocsPage(ctx context.Context, versionID string, providerName string, category string, pageNumber int, pageSize int) ([]DocItem, pagination, error) {
+	endpoint, err := url.Parse(c.BaseURL + "/v2/provider-docs")
+	if err != nil {
+		return nil, pagination{}, err
+	}
+	params := endpoint.Query()
+	params.Set("filter[provider-version]", versionID)
+	params.Set("filter[category]", category)
+	params.Set("filter[language]", "hcl")
+	params.Set("page[size]", fmt.Sprintf("%d", pageSize))
+	params.Set("page[number]", fmt.Sprintf("%d", pageNumber))
+	endpoint.RawQuery = params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, pagination{}, err
+	}
+
+	var response v2ProviderDocsResponse
+	if err := c.doJSON(req, &response); err != nil {
+		return nil, pagination{}, err
+	}
+
+	items := make([]DocItem, 0, len(response.Data))
+	for _, doc := range response.Data {
+		item, ok := docItemFromAttributes(providerName, doc.Attributes)
+		if ok {
+			items = append(items, item)
+		}
+	}
+
+	return items, pagination{totalPages: response.Meta.Pagination.TotalPages, itemCount: len(response.Data)}, nil
 }
 
 func (c Client) GetProviderDoc(ctx context.Context, provider Provider, kind string, name string) (DocPage, error) {
@@ -349,6 +381,7 @@ func docKindRank(kind string) int {
 
 type v2ProviderDocsResponse struct {
 	Data []v2ProviderDocData `json:"data"`
+	Meta paginationMeta      `json:"meta"`
 }
 
 type v2ProviderDocResponse struct {

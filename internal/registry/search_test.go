@@ -74,6 +74,67 @@ func TestSearchProvidersExactSource(t *testing.T) {
 	}
 }
 
+func TestSearchProvidersReturnsAllResults(t *testing.T) {
+	const providerCount = 16
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v2/providers":
+			fmt.Fprint(w, providerSearchResponseJSON("aws", providerCount))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClientForBaseURL(server.URL)
+	providers, err := client.SearchProviders(context.Background(), "aws")
+	if err != nil {
+		t.Fatalf("search providers: %v", err)
+	}
+
+	if len(providers) != providerCount {
+		t.Fatalf("expected %d providers, got %d", providerCount, len(providers))
+	}
+}
+
+func TestStreamSearchProvidersYieldsPages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v2/providers":
+			switch r.URL.Query().Get("page[number]") {
+			case "1":
+				fmt.Fprint(w, providerSearchResponseJSONWithTotalPages("aws", 1, 2))
+			case "2":
+				fmt.Fprint(w, providerSearchResponseJSONWithTotalPages("aws-tail", 1, 2))
+			default:
+				t.Fatalf("unexpected page number: %s", r.URL.Query().Get("page[number]"))
+			}
+		case strings.HasPrefix(r.URL.Path, "/v1/providers/namespace/"):
+			parts := strings.Split(r.URL.Path, "/")
+			name := parts[len(parts)-1]
+			fmt.Fprintf(w, `{"namespace":"namespace","name":%q,"alias":%q,"version":"1.0.0","description":"","downloads":1,"tier":"community"}`, name, name)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClientForBaseURL(server.URL)
+	var pageLengths []int
+	err := client.StreamSearchProviders(context.Background(), "aws", func(providers []Provider) error {
+		pageLengths = append(pageLengths, len(providers))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("stream search providers: %v", err)
+	}
+
+	if fmt.Sprint(pageLengths) != "[1 1]" {
+		t.Fatalf("unexpected page lengths: %v", pageLengths)
+	}
+}
+
 func TestResolveProviderShortNameUsesMostDownloads(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -219,6 +280,53 @@ func TestListProviderDocsReturnsSupportedDocs(t *testing.T) {
 	}
 }
 
+func TestStreamProviderDocsYieldsPages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/providers/hashicorp/aws":
+			w.Write([]byte(`{
+				"included": [
+					{"type":"provider-versions","id":"97303","attributes":{"version":"6.46.0","tag":"v6.46.0"}}
+				]
+			}`))
+		case "/v2/provider-docs":
+			category := r.URL.Query().Get("filter[category]")
+			page := r.URL.Query().Get("page[number]")
+			switch {
+			case category == "resources" && page == "1":
+				w.Write([]byte(providerDocsResponseJSONWithTotalPages("resources", 1, "resource", 2)))
+			case category == "resources" && page == "2":
+				w.Write([]byte(providerDocsResponseJSONWithTotalPages("resources", 1, "tail", 2)))
+			case category == "resources":
+				t.Fatalf("unexpected resources page number: %s", page)
+			default:
+				w.Write([]byte(`{"data":[]}`))
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClientForBaseURL(server.URL)
+	var pageLengths []int
+	err := client.StreamProviderDocs(context.Background(), Provider{
+		Namespace:     "hashicorp",
+		Name:          "aws",
+		LatestVersion: "6.46.0",
+	}, func(items []DocItem) error {
+		pageLengths = append(pageLengths, len(items))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("stream provider docs: %v", err)
+	}
+
+	if fmt.Sprint(pageLengths) != "[1 1]" {
+		t.Fatalf("unexpected page lengths: %v", pageLengths)
+	}
+}
+
 func TestGetProviderDocFetchesContentAndSource(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -273,6 +381,10 @@ func TestGetProviderDocFetchesContentAndSource(t *testing.T) {
 }
 
 func providerDocsResponseJSON(category string, count int, prefix string) string {
+	return providerDocsResponseJSONWithTotalPages(category, count, prefix, 0)
+}
+
+func providerDocsResponseJSONWithTotalPages(category string, count int, prefix string, totalPages int) string {
 	var b strings.Builder
 	b.WriteString(`{"data":[`)
 	for i := 0; i < count; i++ {
@@ -283,11 +395,19 @@ func providerDocsResponseJSON(category string, count int, prefix string) string 
 		path := fmt.Sprintf("website/docs/r/%s.html.markdown", slug)
 		fmt.Fprintf(&b, `{"type":"provider-docs","id":"%s-%d","attributes":{"category":%q,"language":"hcl","path":%q,"slug":%q,"title":%q}}`, prefix, i, category, path, slug, slug)
 	}
-	b.WriteString(`]}`)
+	b.WriteString(`]`)
+	if totalPages > 0 {
+		fmt.Fprintf(&b, `,"meta":{"pagination":{"total-pages":%d}}`, totalPages)
+	}
+	b.WriteString(`}`)
 	return b.String()
 }
 
 func providerSearchResponseJSON(prefix string, count int) string {
+	return providerSearchResponseJSONWithTotalPages(prefix, count, 0)
+}
+
+func providerSearchResponseJSONWithTotalPages(prefix string, count int, totalPages int) string {
 	var b strings.Builder
 	b.WriteString(`{"data":[`)
 	for i := 0; i < count; i++ {
@@ -298,6 +418,10 @@ func providerSearchResponseJSON(prefix string, count int) string {
 		fullName := "namespace/" + name
 		fmt.Fprintf(&b, `{"attributes":{"full-name":%q,"namespace":"namespace","name":%q,"alias":%q,"description":"","downloads":1,"tier":"community"}}`, fullName, name, name)
 	}
-	b.WriteString(`]}`)
+	b.WriteString(`]`)
+	if totalPages > 0 {
+		fmt.Fprintf(&b, `,"meta":{"pagination":{"total-pages":%d}}`, totalPages)
+	}
+	b.WriteString(`}`)
 	return b.String()
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"terraform-util/internal/app"
 
@@ -19,7 +20,9 @@ type options struct {
 
 type service interface {
 	SearchProviders(context.Context, string) ([]app.Provider, error)
+	StreamSearchProviders(context.Context, string, func([]app.Provider) error) error
 	ListProviderDocs(context.Context, string, string) ([]app.DocItem, error)
+	StreamProviderDocs(context.Context, string, string, func([]app.DocItem) error) error
 	GetProviderDoc(context.Context, string, string) (app.DocPage, error)
 	AddProvider(context.Context, string, string, string) (app.ProjectResult, error)
 	UpdateProvider(context.Context, string, string, string) (app.ProjectResult, error)
@@ -95,18 +98,25 @@ func newSearchCommand(opts *options, svc service) *cobra.Command {
 		GroupID: "registry",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			providers, err := svc.SearchProviders(cmd.Context(), args[0])
-			if err != nil {
-				return err
-			}
 			if opts.quiet {
 				return nil
 			}
-			if len(providers) == 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "No providers found for %q\n", args[0])
+
+			printed := false
+			err := svc.StreamSearchProviders(cmd.Context(), args[0], func(providers []app.Provider) error {
+				if !printed {
+					printProviderSearchHeader(cmd.OutOrStdout(), opts.details)
+					printed = true
+				}
+				printProviderSearchRows(cmd.OutOrStdout(), providers, opts.details)
 				return nil
+			})
+			if err != nil {
+				return err
 			}
-			printProviderSearchResults(cmd.OutOrStdout(), providers, opts.details)
+			if !printed {
+				fmt.Fprintf(cmd.OutOrStdout(), "No providers found for %q\n", args[0])
+			}
 			return nil
 		},
 	}
@@ -240,16 +250,21 @@ func newDocsListCommand(opts *options, svc service) *cobra.Command {
 			if len(args) == 2 {
 				keyword = args[1]
 			}
-			items, err := svc.ListProviderDocs(cmd.Context(), args[0], keyword)
-			if err != nil {
-				return err
-			}
 			if opts.quiet {
 				return nil
 			}
 
-			printDocList(cmd.OutOrStdout(), items, opts.details)
-			return nil
+			printedMetadata := false
+			return svc.StreamProviderDocs(cmd.Context(), args[0], keyword, func(items []app.DocItem) error {
+				if opts.details && !printedMetadata && len(items) > 0 {
+					printProviderMetadata(cmd.OutOrStdout(), items[0].Provider, providerDocsWebsiteURL(items[0].Provider))
+					fmt.Fprintln(cmd.OutOrStdout())
+					printedMetadata = true
+				}
+
+				printDocList(cmd.OutOrStdout(), items, false)
+				return nil
+			})
 		},
 	}
 }
@@ -346,8 +361,16 @@ func providerDocsWebsiteURL(provider app.Provider) string {
 }
 
 func printProviderSearchResults(w io.Writer, providers []app.Provider, details bool) {
-	widths := searchColumnWidths(providers, details)
-	printSearchRow(w, widths, details, []string{"provider", "name", "version", "downloads", "verified"})
+	printProviderSearchHeader(w, details)
+	printProviderSearchRows(w, providers, details)
+}
+
+func printProviderSearchHeader(w io.Writer, details bool) {
+	printSearchRow(w, searchColumnWidths(), details, []string{"provider", "name", "version", "downloads", "tier", "verified"})
+}
+
+func printProviderSearchRows(w io.Writer, providers []app.Provider, details bool) {
+	widths := searchColumnWidths()
 	for _, provider := range providers {
 		verified := ""
 		if provider.Verified {
@@ -364,55 +387,43 @@ func printProviderSearchResults(w io.Writer, providers []app.Provider, details b
 			provider.DisplayName,
 			provider.LatestVersion,
 			downloads,
+			provider.Tier,
 			verified,
 		})
 	}
 }
 
-func searchColumnWidths(providers []app.Provider, details bool) []int {
-	widths := []int{len("provider"), len("name"), len("version"), len("downloads"), len("verified")}
-
-	for _, provider := range providers {
-		values := []string{
-			provider.Namespace + "/" + provider.Name,
-			provider.DisplayName,
-			provider.LatestVersion,
-			fmt.Sprintf("%d", provider.Downloads),
-			"",
-		}
-		if provider.Verified {
-			values[4] = "true"
-		}
-
-		indexes := []int{0, 1, 2, 4}
-		if details {
-			indexes = []int{0, 1, 2, 3, 4}
-		}
-		for _, i := range indexes {
-			if len(values[i]) > widths[i] {
-				widths[i] = len(values[i])
-			}
-		}
-	}
-
-	return widths
+func searchColumnWidths() []int {
+	return []int{32, 8, 42, 12, 10, len("verified")}
 }
 
 func printSearchRow(w io.Writer, widths []int, details bool, values []string) {
 	row := values
 	rowWidths := widths
 	if !details {
-		row = []string{values[0], values[1], values[2], values[4]}
-		rowWidths = []int{widths[0], widths[1], widths[2], widths[4]}
+		row = []string{values[0], values[1], values[2], values[5]}
+		rowWidths = []int{widths[0], widths[1], widths[2], widths[5]}
 	}
 
 	for i := 0; i < len(row); i++ {
 		if i > 0 {
 			fmt.Fprint(w, "  ")
 		}
-		fmt.Fprintf(w, "%-*s", rowWidths[i], row[i])
+		fmt.Fprintf(w, "%-*s", rowWidths[i], truncateColumn(row[i], rowWidths[i]))
 	}
 	fmt.Fprintln(w)
+}
+
+func truncateColumn(value string, width int) string {
+	if utf8.RuneCountInString(value) <= width {
+		return value
+	}
+	if width <= 1 {
+		return value[:0]
+	}
+
+	runes := []rune(value)
+	return string(runes[:width-1]) + "…"
 }
 
 const rootHelpTemplate = `{{with (or .Long .Short)}}{{.}}

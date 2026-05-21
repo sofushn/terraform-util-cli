@@ -9,7 +9,10 @@ tracks planned follow-up work.
 - Go CLI entrypoint for `terraform-util`.
 - Cobra command tree and grouped root help.
 - Provider search through the official Terraform Registry.
+- Search displays all provider search results returned by the registry across paged results, using registry pagination metadata when available.
+- Search prints result pages progressively instead of waiting for every page to load.
 - Stable-width search output with `true` in the `verified` column for verified providers.
+- Detailed search output includes downloads and provider tier.
 - Detailed output flag:
   - `--details`
   - `-d`
@@ -22,7 +25,8 @@ tracks planned follow-up work.
 - `add` and `update` use the latest provider version when no explicit version constraint is provided.
 - Local `.tf` file edits using HashiCorp HCL tooling.
 - Registry-backed `docs list <provider> [keyword]` and `docs <provider> <kind>/<name>` commands.
-- `docs list` aggregates all provider docs pages in the background for resources, data sources, and functions.
+- `docs list` loads all provider docs pages for resources, data sources, and functions, using registry pagination metadata when available.
+- `docs list` prints result pages progressively instead of waiting for every page to load.
 - Detailed docs output includes:
   - provider source
   - provider version

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -64,18 +65,29 @@ func (c Client) SearchProviders(ctx context.Context, query string) ([]Provider, 
 
 	sortProviders(providers, normalized)
 
-	if len(providers) > 15 {
-		providers = providers[:15]
-	}
-
-	for i := range providers {
-		version, err := c.latestVersion(ctx, providers[i].Namespace, providers[i].Name)
-		if err == nil {
-			providers[i].LatestVersion = version
-		}
-	}
+	c.hydrateProviderVersions(ctx, providers)
 
 	return providers, nil
+}
+
+func (c Client) StreamSearchProviders(ctx context.Context, query string, yield func([]Provider) error) error {
+	normalized := strings.TrimSpace(query)
+	if normalized == "" {
+		return fmt.Errorf("provider search query is required")
+	}
+
+	if provider, ok, err := c.exactProvider(ctx, normalized); ok || err != nil {
+		if err != nil {
+			return err
+		}
+		return yield([]Provider{provider})
+	}
+
+	return c.searchByNamePages(ctx, normalized, func(providers []Provider) error {
+		sortProviders(providers, normalized)
+		c.hydrateProviderVersions(ctx, providers)
+		return yield(providers)
+	})
 }
 
 func (c Client) ResolveProvider(ctx context.Context, query string) (Provider, error) {
@@ -114,11 +126,9 @@ func (c Client) ResolveProvider(ctx context.Context, query string) (Provider, er
 	}
 
 	provider := *selected
-	version, err := c.latestVersion(ctx, provider.Namespace, provider.Name)
-	if err == nil {
-		provider.LatestVersion = version
-	}
-	return provider, nil
+	resolvedProviders := []Provider{provider}
+	c.hydrateProviderVersions(ctx, resolvedProviders)
+	return resolvedProviders[0], nil
 }
 
 func (c Client) exactProvider(ctx context.Context, query string) (Provider, bool, error) {
@@ -141,49 +151,73 @@ func (c Client) exactProvider(ctx context.Context, query string) (Provider, bool
 }
 
 func (c Client) searchByName(ctx context.Context, query string) ([]Provider, error) {
+	var providers []Provider
+	err := c.searchByNamePages(ctx, query, func(page []Provider) error {
+		providers = append(providers, page...)
+		return nil
+	})
+	return providers, err
+}
+
+func (c Client) searchByNamePages(ctx context.Context, query string, yield func([]Provider) error) error {
 	const pageSize = 100
 
-	var providers []Provider
 	for pageNumber := 1; ; pageNumber++ {
-		endpoint, err := url.Parse(c.BaseURL + "/v2/providers")
+		providers, page, err := c.searchByNamePage(ctx, query, pageNumber, pageSize)
 		if err != nil {
-			return nil, err
-		}
-		params := endpoint.Query()
-		params.Set("filter[name]", query)
-		params.Set("page[size]", fmt.Sprintf("%d", pageSize))
-		params.Set("page[number]", fmt.Sprintf("%d", pageNumber))
-		endpoint.RawQuery = params.Encode()
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
-		if err != nil {
-			return nil, err
+			return err
 		}
 
-		var response v2ProvidersResponse
-		if err := c.doJSON(req, &response); err != nil {
-			return nil, err
+		if len(providers) > 0 {
+			if err := yield(providers); err != nil {
+				return err
+			}
 		}
 
-		for _, item := range response.Data {
-			attrs := item.Attributes
-			providers = append(providers, Provider{
-				Source:        "registry.terraform.io/" + attrs.FullName,
-				RepositoryURL: attrs.Source,
-				Namespace:     attrs.Namespace,
-				Name:          attrs.Name,
-				DisplayName:   displayName(attrs.Alias, attrs.Name),
-				Description:   attrs.Description,
-				Downloads:     attrs.Downloads,
-				Verified:      isVerified(attrs.Tier),
-				Tier:          attrs.Tier,
-			})
-		}
-
-		if len(response.Data) < pageSize {
-			return providers, nil
+		if page.isLast(pageNumber, pageSize) {
+			return nil
 		}
 	}
+}
+
+func (c Client) searchByNamePage(ctx context.Context, query string, pageNumber int, pageSize int) ([]Provider, pagination, error) {
+	endpoint, err := url.Parse(c.BaseURL + "/v2/providers")
+	if err != nil {
+		return nil, pagination{}, err
+	}
+	params := endpoint.Query()
+	params.Set("filter[name]", query)
+	params.Set("page[size]", fmt.Sprintf("%d", pageSize))
+	params.Set("page[number]", fmt.Sprintf("%d", pageNumber))
+	endpoint.RawQuery = params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, pagination{}, err
+	}
+
+	var response v2ProvidersResponse
+	if err := c.doJSON(req, &response); err != nil {
+		return nil, pagination{}, err
+	}
+
+	providers := make([]Provider, 0, len(response.Data))
+	for _, item := range response.Data {
+		attrs := item.Attributes
+		providers = append(providers, Provider{
+			Source:        "registry.terraform.io/" + attrs.FullName,
+			RepositoryURL: attrs.Source,
+			Namespace:     attrs.Namespace,
+			Name:          attrs.Name,
+			DisplayName:   displayName(attrs.Alias, attrs.Name),
+			Description:   attrs.Description,
+			Downloads:     attrs.Downloads,
+			Verified:      isVerified(attrs.Tier),
+			Tier:          attrs.Tier,
+		})
+	}
+
+	return providers, pagination{totalPages: response.Meta.Pagination.TotalPages, itemCount: len(response.Data)}, nil
 }
 
 func (c Client) getProvider(ctx context.Context, namespace string, name string) (Provider, error) {
@@ -218,6 +252,25 @@ func (c Client) latestVersion(ctx context.Context, namespace string, name string
 		return "", err
 	}
 	return provider.LatestVersion, nil
+}
+
+func (c Client) hydrateProviderVersions(ctx context.Context, providers []Provider) {
+	var wg sync.WaitGroup
+	for i := range providers {
+		if providers[i].LatestVersion != "" {
+			continue
+		}
+
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			version, err := c.latestVersion(ctx, providers[i].Namespace, providers[i].Name)
+			if err == nil {
+				providers[i].LatestVersion = version
+			}
+		}(i)
+	}
+	wg.Wait()
 }
 
 func (c Client) doJSON(req *http.Request, target any) error {
@@ -284,6 +337,18 @@ func isVerified(tier string) bool {
 	return tier == "official" || tier == "partner"
 }
 
+type pagination struct {
+	totalPages int
+	itemCount  int
+}
+
+func (p pagination) isLast(pageNumber int, pageSize int) bool {
+	if p.totalPages > 0 {
+		return pageNumber >= p.totalPages
+	}
+	return p.itemCount < pageSize
+}
+
 type notFoundError struct {
 	url string
 }
@@ -321,4 +386,11 @@ type v2ProvidersResponse struct {
 			Tier        string `json:"tier"`
 		} `json:"attributes"`
 	} `json:"data"`
+	Meta paginationMeta `json:"meta"`
+}
+
+type paginationMeta struct {
+	Pagination struct {
+		TotalPages int `json:"total-pages"`
+	} `json:"pagination"`
 }

@@ -99,10 +99,10 @@ The default search result should include enough information to choose a provider
 
 Display `true` in the `verified` column for verified providers. Leave the value empty for unverified providers.
 
-With `--details`, search output should also include download counts:
+With `--details`, search output should also include download counts and provider tier:
 
 ```text
-hashicorp/aws  AWS  6.0.0  downloads: 123456789  true
+hashicorp/aws  AWS  6.0.0  123456789  official  true
 ```
 
 Selection ranking should prefer:

@@ -18,6 +18,7 @@ type Provider struct {
 	LatestVersion string
 	Downloads     int64
 	Verified      bool
+	Tier          string
 }
 
 type ProjectResult struct {
@@ -55,11 +56,13 @@ type UpdateProviderOptions struct {
 
 type ProviderResolver interface {
 	SearchProviders(context.Context, string) ([]Provider, error)
+	StreamSearchProviders(context.Context, string, func([]Provider) error) error
 	ResolveProvider(context.Context, string) (Provider, error)
 }
 
 type ProviderDocs interface {
 	ListProviderDocs(context.Context, Provider) ([]DocItem, error)
+	StreamProviderDocs(context.Context, Provider, func([]DocItem) error) error
 	GetProviderDoc(context.Context, Provider, string, string) (DocPage, error)
 }
 
@@ -88,6 +91,10 @@ func (s Service) SearchProviders(ctx context.Context, query string) ([]Provider,
 	return s.resolver.SearchProviders(ctx, query)
 }
 
+func (s Service) StreamSearchProviders(ctx context.Context, query string, yield func([]Provider) error) error {
+	return s.resolver.StreamSearchProviders(ctx, query, yield)
+}
+
 func (s Service) ListProviderDocs(ctx context.Context, providerInput string, keyword string) ([]DocItem, error) {
 	provider, err := s.resolver.ResolveProvider(ctx, providerInput)
 	if err != nil {
@@ -111,6 +118,28 @@ func (s Service) ListProviderDocs(ctx context.Context, providerInput string, key
 		}
 	}
 	return filtered, nil
+}
+
+func (s Service) StreamProviderDocs(ctx context.Context, providerInput string, keyword string, yield func([]DocItem) error) error {
+	provider, err := s.resolver.ResolveProvider(ctx, providerInput)
+	if err != nil {
+		return err
+	}
+
+	keyword = strings.ToLower(strings.TrimSpace(keyword))
+	return s.docs.StreamProviderDocs(ctx, provider, func(items []DocItem) error {
+		out := make([]DocItem, 0, len(items))
+		for _, item := range items {
+			item.Provider = provider
+			if keyword == "" || docItemMatches(item, keyword) {
+				out = append(out, item)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return yield(out)
+	})
 }
 
 func (s Service) GetProviderDoc(ctx context.Context, providerInput string, docsPath string) (DocPage, error) {
@@ -214,6 +243,16 @@ func (r registryAdapter) SearchProviders(ctx context.Context, query string) ([]P
 	return out, nil
 }
 
+func (r registryAdapter) StreamSearchProviders(ctx context.Context, query string, yield func([]Provider) error) error {
+	return r.client.StreamSearchProviders(ctx, query, func(providers []registry.Provider) error {
+		out := make([]Provider, 0, len(providers))
+		for _, provider := range providers {
+			out = append(out, appProvider(provider))
+		}
+		return yield(out)
+	})
+}
+
 func (r registryAdapter) ResolveProvider(ctx context.Context, query string) (Provider, error) {
 	provider, err := r.client.ResolveProvider(ctx, query)
 	if err != nil {
@@ -233,6 +272,16 @@ func (r registryAdapter) ListProviderDocs(ctx context.Context, provider Provider
 		out = append(out, appDocItem(provider, item))
 	}
 	return out, nil
+}
+
+func (r registryAdapter) StreamProviderDocs(ctx context.Context, provider Provider, yield func([]DocItem) error) error {
+	return r.client.StreamProviderDocs(ctx, registryProvider(provider), func(items []registry.DocItem) error {
+		out := make([]DocItem, 0, len(items))
+		for _, item := range items {
+			out = append(out, appDocItem(provider, item))
+		}
+		return yield(out)
+	})
 }
 
 func (r registryAdapter) GetProviderDoc(ctx context.Context, provider Provider, kind string, name string) (DocPage, error) {
@@ -279,6 +328,7 @@ func appProvider(provider registry.Provider) Provider {
 		LatestVersion: provider.LatestVersion,
 		Downloads:     provider.Downloads,
 		Verified:      provider.Verified,
+		Tier:          provider.Tier,
 	}
 }
 
@@ -292,6 +342,7 @@ func registryProvider(provider Provider) registry.Provider {
 		LatestVersion: provider.LatestVersion,
 		Downloads:     provider.Downloads,
 		Verified:      provider.Verified,
+		Tier:          provider.Tier,
 	}
 }
 

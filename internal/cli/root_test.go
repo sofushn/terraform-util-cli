@@ -157,6 +157,7 @@ func TestSearchCommandPrintsRegistryResults(t *testing.T) {
 		LatestVersion: "6.46.0",
 		Verified:      true,
 		Downloads:     500,
+		Tier:          "official",
 	}, {
 		Namespace:     "verylongnamespace",
 		Name:          "custom",
@@ -170,9 +171,9 @@ func TestSearchCommandPrintsRegistryResults(t *testing.T) {
 		t.Fatalf("expected search to succeed: %v", err)
 	}
 
-	want := "provider                  name    version  verified\n" +
-		"hashicorp/aws             aws     6.46.0   true    \n" +
-		"verylongnamespace/custom  Custom  1.0.0            \n"
+	want := "provider                          name      version                                     verified\n" +
+		"hashicorp/aws                     aws       6.46.0                                      true    \n" +
+		"verylongnamespace/custom          Custom    1.0.0                                               \n"
 	if stdout != want {
 		t.Fatalf("unexpected stdout:\nwant: %q\n got: %q", want, stdout)
 	}
@@ -186,6 +187,7 @@ func TestSearchCommandDetailsPrintsDownloads(t *testing.T) {
 		LatestVersion: "6.46.0",
 		Verified:      true,
 		Downloads:     500,
+		Tier:          "official",
 	}}}
 
 	stdout, _, err := executeWithService(svc, "--details", "search", "aws")
@@ -193,10 +195,39 @@ func TestSearchCommandDetailsPrintsDownloads(t *testing.T) {
 		t.Fatalf("expected search to succeed: %v", err)
 	}
 
-	want := "provider       name  version  downloads  verified\n" +
-		"hashicorp/aws  aws   6.46.0   500        true    \n"
+	want := "provider                          name      version                                     downloads     tier        verified\n" +
+		"hashicorp/aws                     aws       6.46.0                                      500           official    true    \n"
 	if stdout != want {
 		t.Fatalf("unexpected stdout:\nwant: %q\n got: %q", want, stdout)
+	}
+}
+
+func TestSearchCommandDetailsKeepsLongVersionsInVersionColumn(t *testing.T) {
+	svc := fakeService{providers: []app.Provider{{
+		Namespace:     "ArtsiomAntropau",
+		Name:          "aws",
+		DisplayName:   "aws",
+		LatestVersion: "3.74.1+emr-managed-scaling-policy",
+		Downloads:     4800,
+		Tier:          "community",
+	}}}
+
+	stdout, _, err := executeWithService(svc, "--details", "search", "aws")
+	if err != nil {
+		t.Fatalf("expected search to succeed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected header and one row, got:\n%s", stdout)
+	}
+	versionIndex := strings.Index(lines[1], "3.74.1+emr-managed-scaling-policy")
+	downloadsIndex := strings.Index(lines[1], "4800")
+	if versionIndex == -1 || downloadsIndex == -1 || downloadsIndex <= versionIndex+len("3.74.1+emr-managed-scaling-policy")+1 {
+		t.Fatalf("expected long version to stay separated from downloads, got:\n%s", stdout)
+	}
+	if !strings.Contains(lines[0], "tier") || !strings.Contains(lines[1], "community") {
+		t.Fatalf("expected details output to include tier, got:\n%s", stdout)
 	}
 }
 
@@ -466,7 +497,7 @@ func TestGlobalFlagsParse(t *testing.T) {
 		t.Fatalf("expected command with global flags to succeed: %v", err)
 	}
 
-	if stdout != "provider       name  version  downloads  verified\nhashicorp/aws  aws   6.46.0   500        true    \n" {
+	if stdout != "provider                          name      version                                     downloads     tier        verified\nhashicorp/aws                     aws       6.46.0                                      500                       true    \n" {
 		t.Fatalf("unexpected stdout: %q", stdout)
 	}
 }
@@ -573,6 +604,16 @@ func (s fakeService) SearchProviders(ctx context.Context, query string) ([]app.P
 	return s.providers, nil
 }
 
+func (s fakeService) StreamSearchProviders(ctx context.Context, query string, yield func([]app.Provider) error) error {
+	if s.err != nil {
+		return s.err
+	}
+	if len(s.providers) == 0 {
+		return nil
+	}
+	return yield(s.providers)
+}
+
 func (s fakeService) ListProviderDocs(ctx context.Context, provider string, keyword string) ([]app.DocItem, error) {
 	if s.err != nil {
 		return nil, s.err
@@ -588,6 +629,17 @@ func (s fakeService) ListProviderDocs(ctx context.Context, provider string, keyw
 		}
 	}
 	return filtered, nil
+}
+
+func (s fakeService) StreamProviderDocs(ctx context.Context, provider string, keyword string, yield func([]app.DocItem) error) error {
+	items, err := s.ListProviderDocs(ctx, provider, keyword)
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	return yield(items)
 }
 
 func (s fakeService) GetProviderDoc(ctx context.Context, provider string, docsPath string) (app.DocPage, error) {
