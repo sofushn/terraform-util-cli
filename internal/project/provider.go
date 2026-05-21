@@ -32,6 +32,20 @@ type UpdateOptions struct {
 	VersionConstraint string
 }
 
+type Editor struct{}
+
+func (Editor) AddProvider(cwd string, providerInput string, opts AddOptions) (Result, error) {
+	return AddProvider(cwd, providerInput, opts)
+}
+
+func (Editor) UpdateProvider(cwd string, providerInput string, opts UpdateOptions) (Result, error) {
+	return UpdateProvider(cwd, providerInput, opts)
+}
+
+func (Editor) RemoveProvider(cwd string, providerInput string) (Result, error) {
+	return RemoveProvider(cwd, providerInput)
+}
+
 type tfFile struct {
 	name    string
 	path    string

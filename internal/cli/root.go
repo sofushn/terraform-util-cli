@@ -7,8 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"terraform-registry-cli/internal/project"
-	"terraform-registry-cli/internal/registry"
+	"terraform-registry-cli/internal/app"
 
 	"github.com/spf13/cobra"
 )
@@ -18,18 +17,20 @@ type options struct {
 	quiet   bool
 }
 
-type providerSearcher interface {
-	SearchProviders(context.Context, string) ([]registry.Provider, error)
-	ResolveProvider(context.Context, string) (registry.Provider, error)
+type service interface {
+	SearchProviders(context.Context, string) ([]app.Provider, error)
+	AddProvider(context.Context, string, string, string) (app.ProjectResult, error)
+	UpdateProvider(context.Context, string, string, string) (app.ProjectResult, error)
+	RemoveProvider(context.Context, string, string) (app.ProjectResult, error)
 }
 
 type dependencies struct {
-	searcher providerSearcher
+	service service
 }
 
 // NewRootCommand builds the terraform-registry command tree.
 func NewRootCommand() *cobra.Command {
-	return newRootCommand(dependencies{searcher: registry.NewClient()})
+	return newRootCommand(dependencies{service: app.NewDefaultService()})
 }
 
 func newRootCommand(deps dependencies) *cobra.Command {
@@ -52,10 +53,10 @@ func newRootCommand(deps dependencies) *cobra.Command {
 	rootCmd.PersistentFlags().BoolVar(&opts.verbose, "verbose", false, "show additional output")
 	rootCmd.PersistentFlags().BoolVar(&opts.quiet, "quiet", false, "suppress non-essential output")
 
-	rootCmd.AddCommand(newSearchCommand(opts, deps.searcher))
-	rootCmd.AddCommand(newAddCommand(opts, deps.searcher))
-	rootCmd.AddCommand(newRemoveCommand(opts))
-	rootCmd.AddCommand(newUpdateCommand(opts, deps.searcher))
+	rootCmd.AddCommand(newSearchCommand(opts, deps.service))
+	rootCmd.AddCommand(newAddCommand(opts, deps.service))
+	rootCmd.AddCommand(newRemoveCommand(opts, deps.service))
+	rootCmd.AddCommand(newUpdateCommand(opts, deps.service))
 	rootCmd.AddCommand(newDocsCommand(opts))
 
 	return rootCmd
@@ -85,14 +86,14 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer) error {
 	return err
 }
 
-func newSearchCommand(opts *options, searcher providerSearcher) *cobra.Command {
+func newSearchCommand(opts *options, svc service) *cobra.Command {
 	return &cobra.Command{
 		Use:     "search <provider>",
 		Short:   "Search providers",
 		GroupID: "registry",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			providers, err := searcher.SearchProviders(cmd.Context(), args[0])
+			providers, err := svc.SearchProviders(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
@@ -109,7 +110,7 @@ func newSearchCommand(opts *options, searcher providerSearcher) *cobra.Command {
 	}
 }
 
-func newAddCommand(opts *options, searcher providerSearcher) *cobra.Command {
+func newAddCommand(opts *options, svc service) *cobra.Command {
 	var version string
 
 	cmd := &cobra.Command{
@@ -122,12 +123,7 @@ func newAddCommand(opts *options, searcher providerSearcher) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resolvedProvider, err := searcher.ResolveProvider(cmd.Context(), args[0])
-			if err != nil {
-				return err
-			}
-			providerInput := resolvedProvider.Namespace + "/" + resolvedProvider.Name
-			result, err := project.AddProvider(cwd, providerInput, project.AddOptions{VersionConstraint: version})
+			result, err := svc.AddProvider(cmd.Context(), cwd, args[0], version)
 			if err != nil {
 				return err
 			}
@@ -148,7 +144,7 @@ func newAddCommand(opts *options, searcher providerSearcher) *cobra.Command {
 	return cmd
 }
 
-func newRemoveCommand(opts *options) *cobra.Command {
+func newRemoveCommand(opts *options, svc service) *cobra.Command {
 	return &cobra.Command{
 		Use:     "remove <provider>",
 		Short:   "Remove a provider from the current Terraform project",
@@ -159,7 +155,7 @@ func newRemoveCommand(opts *options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := project.RemoveProvider(cwd, args[0])
+			result, err := svc.RemoveProvider(cmd.Context(), cwd, args[0])
 			if err != nil {
 				return err
 			}
@@ -173,7 +169,7 @@ func newRemoveCommand(opts *options) *cobra.Command {
 	}
 }
 
-func newUpdateCommand(opts *options, searcher providerSearcher) *cobra.Command {
+func newUpdateCommand(opts *options, svc service) *cobra.Command {
 	var constraint string
 
 	cmd := &cobra.Command{
@@ -186,12 +182,7 @@ func newUpdateCommand(opts *options, searcher providerSearcher) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resolvedProvider, err := searcher.ResolveProvider(cmd.Context(), args[0])
-			if err != nil {
-				return err
-			}
-			providerInput := resolvedProvider.Namespace + "/" + resolvedProvider.Name
-			result, err := project.UpdateProvider(cwd, providerInput, project.UpdateOptions{VersionConstraint: constraint})
+			result, err := svc.UpdateProvider(cmd.Context(), cwd, args[0], constraint)
 			if err != nil {
 				return err
 			}
@@ -283,7 +274,7 @@ func printChangedFiles(w io.Writer, changedFiles []string) {
 	}
 }
 
-func printProviderSearchResults(w io.Writer, providers []registry.Provider, verbose bool) {
+func printProviderSearchResults(w io.Writer, providers []app.Provider, verbose bool) {
 	widths := searchColumnWidths(providers, verbose)
 	printSearchRow(w, widths, verbose, []string{"provider", "name", "version", "downloads", "verified"})
 	for _, provider := range providers {
@@ -307,7 +298,7 @@ func printProviderSearchResults(w io.Writer, providers []registry.Provider, verb
 	}
 }
 
-func searchColumnWidths(providers []registry.Provider, verbose bool) []int {
+func searchColumnWidths(providers []app.Provider, verbose bool) []int {
 	widths := []int{len("provider"), len("name"), len("version"), len("downloads"), len("verified")}
 
 	for _, provider := range providers {
