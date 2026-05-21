@@ -147,7 +147,7 @@ provider "aws" {}
 Version constraint policy:
 
 - Resolve the latest provider version from the registry.
-- Default to a pessimistic minor constraint, such as `~> 6.0`.
+- Default to the latest provider version when `--version` is omitted.
 - Allow an override with `--version`.
 
 If multiple `.tf` files exist, the CLI should prefer:
@@ -189,6 +189,7 @@ Recommended behavior:
 - Resolve and verify the provider against the official Terraform Registry before editing files.
 - Resolve the latest version from the registry.
 - Update only the selected provider's `version` field.
+- Default to the latest provider version when `--version` is omitted.
 - Preserve the existing constraint style where possible:
   - `~> 5.0` becomes `~> 6.0`.
   - `>= 5.0` becomes `>= 6.0.0`.
@@ -198,7 +199,7 @@ Recommended behavior:
 Future option:
 
 ```sh
-terraform-registry update aws --constraint "~> 6.0"
+terraform-registry update aws --version "~> 6.0"
 ```
 
 ### `docs list <provider> [keyword]`

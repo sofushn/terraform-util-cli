@@ -24,8 +24,9 @@ func execute(args ...string) (string, string, error) {
 			Downloads:     500,
 		}},
 		projectResult: app.ProjectResult{
-			Provider:     app.Provider{Source: "hashicorp/aws", Name: "aws"},
-			ChangedFiles: []string{"providers.tf", "versions.tf"},
+			Provider:          app.Provider{Source: "hashicorp/aws", Name: "aws"},
+			VersionConstraint: "6.46.0",
+			ChangedFiles:      []string{"providers.tf", "versions.tf"},
 		},
 	}, args...)
 }
@@ -195,8 +196,9 @@ func TestProjectCommandsEditTerraformFiles(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
 	svc := fakeService{projectResult: app.ProjectResult{
-		Provider:     app.Provider{Source: "hashicorp/aws", Name: "aws"},
-		ChangedFiles: []string{"providers.tf", "versions.tf"},
+		Provider:          app.Provider{Source: "hashicorp/aws", Name: "aws"},
+		VersionConstraint: "6.46.0",
+		ChangedFiles:      []string{"providers.tf", "versions.tf"},
 	}}
 
 	stdout, _, err := executeWithService(svc, "add", "aws", "--version", "~> 6.0")
@@ -204,7 +206,7 @@ func TestProjectCommandsEditTerraformFiles(t *testing.T) {
 		t.Fatalf("expected add to succeed: %v", err)
 	}
 	for _, want := range []string{
-		"Added provider hashicorp/aws (~> 6.0)",
+		"Added provider hashicorp/aws (6.46.0)",
 		"versions.tf",
 		"providers.tf",
 	} {
@@ -213,11 +215,11 @@ func TestProjectCommandsEditTerraformFiles(t *testing.T) {
 		}
 	}
 
-	stdout, _, err = executeWithService(svc, "update", "aws", "--constraint", "~> 6.1")
+	stdout, _, err = executeWithService(svc, "update", "aws", "--version", "~> 6.1")
 	if err != nil {
 		t.Fatalf("expected update to succeed: %v", err)
 	}
-	if !strings.Contains(stdout, "Updated provider hashicorp/aws (~> 6.1)") {
+	if !strings.Contains(stdout, "Updated provider hashicorp/aws (6.46.0)") {
 		t.Fatalf("unexpected update stdout:\n%s", stdout)
 	}
 
@@ -234,8 +236,9 @@ func TestAddPrintsServiceResult(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
 	svc := fakeService{projectResult: app.ProjectResult{
-		Provider:     app.Provider{Source: "popular/aws", Name: "aws"},
-		ChangedFiles: []string{"versions.tf"},
+		Provider:          app.Provider{Source: "popular/aws", Name: "aws"},
+		VersionConstraint: "~> 1.0",
+		ChangedFiles:      []string{"versions.tf"},
 	}}
 
 	stdout, _, err := executeWithService(svc, "add", "aws", "--version", "~> 1.0")
@@ -255,7 +258,7 @@ func TestAddAndUpdateReturnServiceErrors(t *testing.T) {
 	if _, _, err := executeWithService(svc, "add", "missing"); err == nil {
 		t.Fatalf("expected add to fail when service fails")
 	}
-	if _, _, err := executeWithService(svc, "update", "missing", "--constraint", "~> 1.0"); err == nil {
+	if _, _, err := executeWithService(svc, "update", "missing", "--version", "~> 1.0"); err == nil {
 		t.Fatalf("expected update to fail when service fails")
 	}
 }
@@ -280,9 +283,18 @@ func TestRemoveCallsService(t *testing.T) {
 func TestUpdateRequiresConstraint(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
+	svc := fakeService{projectResult: app.ProjectResult{
+		Provider:          app.Provider{Source: "hashicorp/aws", Name: "aws"},
+		VersionConstraint: "6.46.0",
+		ChangedFiles:      []string{"versions.tf"},
+	}}
 
-	if _, _, err := executeWithService(fakeService{err: errFakeService}, "update", "aws"); err == nil {
-		t.Fatalf("expected update without --constraint to fail")
+	stdout, _, err := executeWithService(svc, "update", "aws")
+	if err != nil {
+		t.Fatalf("expected update without --version to use latest version: %v", err)
+	}
+	if !strings.Contains(stdout, "Updated provider hashicorp/aws (6.46.0)") {
+		t.Fatalf("unexpected stdout:\n%s", stdout)
 	}
 }
 
@@ -460,7 +472,7 @@ func TestCommandSpecificFutureFlagsParse(t *testing.T) {
 		args []string
 	}{
 		{name: "add version", args: []string{"add", "aws", "--version", "~> 6.0"}},
-		{name: "update constraint", args: []string{"update", "aws", "--constraint", "~> 6.1"}},
+		{name: "update version", args: []string{"update", "aws", "--version", "~> 6.1"}},
 	}
 
 	for _, tt := range tests {

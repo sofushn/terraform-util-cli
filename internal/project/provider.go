@@ -122,10 +122,6 @@ func RemoveProvider(cwd string, providerInput string) (Result, error) {
 }
 
 func UpdateProvider(cwd string, providerInput string, opts UpdateOptions) (Result, error) {
-	if strings.TrimSpace(opts.VersionConstraint) == "" {
-		return Result{}, fmt.Errorf("update requires --constraint until registry version resolution is implemented")
-	}
-
 	provider, err := ParseProvider(providerInput)
 	if err != nil {
 		return Result{}, err

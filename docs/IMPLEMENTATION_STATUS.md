@@ -9,10 +9,11 @@ This document tracks temporary implementation state. The product spec in [SPEC.m
 - Project commands:
   - `add <provider> [--version <constraint>]`
   - `remove <provider>`
-  - `update <provider> --constraint <constraint>`
+  - `update <provider> [--version <constraint>]`
 - Provider search through the Terraform Registry.
 - Registry-backed provider resolution for `add` and `update`; short names choose the matching provider with the highest download count.
 - `remove` stays local-only and does not verify against the registry.
+- `add` and `update` use the latest provider version when no explicit version constraint is provided.
 - Local `.tf` file edits using HashiCorp HCL tooling.
 - Tests for CLI parsing, provider search, and project file edits.
 
@@ -20,5 +21,3 @@ This document tracks temporary implementation state. The product spec in [SPEC.m
 
 - `docs` commands still print placeholder output.
 - Project commands do not call the Terraform Registry.
-- `add` only writes a `version` field when `--version` is provided.
-- `update` currently requires `--constraint`; automatic latest-version resolution is not implemented yet.

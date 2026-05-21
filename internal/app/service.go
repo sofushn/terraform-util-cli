@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 
 	"terraform-registry-cli/internal/project"
 	"terraform-registry-cli/internal/registry"
@@ -18,8 +19,9 @@ type Provider struct {
 }
 
 type ProjectResult struct {
-	Provider     Provider
-	ChangedFiles []string
+	Provider          Provider
+	VersionConstraint string
+	ChangedFiles      []string
 }
 
 type AddProviderOptions struct {
@@ -64,10 +66,12 @@ func (s Service) AddProvider(ctx context.Context, cwd string, providerInput stri
 		return ProjectResult{}, err
 	}
 
+	versionConstraint = withDefaultVersion(versionConstraint, resolved.LatestVersion)
 	result, err := s.editor.AddProvider(cwd, resolved.Namespace+"/"+resolved.Name, AddProviderOptions{VersionConstraint: versionConstraint})
 	if err != nil {
 		return ProjectResult{}, err
 	}
+	result.VersionConstraint = versionConstraint
 
 	return result, nil
 }
@@ -78,16 +82,25 @@ func (s Service) UpdateProvider(ctx context.Context, cwd string, providerInput s
 		return ProjectResult{}, err
 	}
 
+	versionConstraint = withDefaultVersion(versionConstraint, resolved.LatestVersion)
 	result, err := s.editor.UpdateProvider(cwd, resolved.Namespace+"/"+resolved.Name, UpdateProviderOptions{VersionConstraint: versionConstraint})
 	if err != nil {
 		return ProjectResult{}, err
 	}
+	result.VersionConstraint = versionConstraint
 
 	return result, nil
 }
 
 func (s Service) RemoveProvider(ctx context.Context, cwd string, providerInput string) (ProjectResult, error) {
 	return s.editor.RemoveProvider(cwd, providerInput)
+}
+
+func withDefaultVersion(versionConstraint string, latestVersion string) string {
+	if strings.TrimSpace(versionConstraint) != "" {
+		return versionConstraint
+	}
+	return latestVersion
 }
 
 type registryResolver struct {

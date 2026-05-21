@@ -10,7 +10,7 @@ var errResolver = errors.New("resolver failed")
 
 func TestAddProviderResolvesBeforeEditing(t *testing.T) {
 	resolver := &fakeResolver{
-		resolved: Provider{Namespace: "popular", Name: "aws"},
+		resolved: Provider{Namespace: "popular", Name: "aws", LatestVersion: "1.2.3"},
 	}
 	editor := &fakeEditor{}
 	service := NewService(resolver, editor)
@@ -32,6 +32,24 @@ func TestAddProviderResolvesBeforeEditing(t *testing.T) {
 	if result.Provider.Source != "popular/aws" {
 		t.Fatalf("unexpected result: %#v", result)
 	}
+	if result.VersionConstraint != "~> 1.0" {
+		t.Fatalf("expected result version constraint, got %q", result.VersionConstraint)
+	}
+}
+
+func TestAddProviderUsesLatestVersionWhenOmitted(t *testing.T) {
+	resolver := &fakeResolver{
+		resolved: Provider{Namespace: "popular", Name: "aws", LatestVersion: "1.2.3"},
+	}
+	editor := &fakeEditor{}
+	service := NewService(resolver, editor)
+
+	if _, err := service.AddProvider(context.Background(), "/work", "aws", ""); err != nil {
+		t.Fatalf("add provider: %v", err)
+	}
+	if editor.addVersion != "1.2.3" {
+		t.Fatalf("expected latest version, got %q", editor.addVersion)
+	}
 }
 
 func TestAddProviderReturnsResolverError(t *testing.T) {
@@ -49,7 +67,7 @@ func TestAddProviderReturnsResolverError(t *testing.T) {
 
 func TestUpdateProviderResolvesBeforeEditing(t *testing.T) {
 	resolver := &fakeResolver{
-		resolved: Provider{Namespace: "hashicorp", Name: "aws"},
+		resolved: Provider{Namespace: "hashicorp", Name: "aws", LatestVersion: "6.46.0"},
 	}
 	editor := &fakeEditor{}
 	service := NewService(resolver, editor)
@@ -66,6 +84,21 @@ func TestUpdateProviderResolvesBeforeEditing(t *testing.T) {
 	}
 	if editor.updateVersion != "~> 6.1" {
 		t.Fatalf("expected constraint to be passed to editor, got %q", editor.updateVersion)
+	}
+}
+
+func TestUpdateProviderUsesLatestVersionWhenOmitted(t *testing.T) {
+	resolver := &fakeResolver{
+		resolved: Provider{Namespace: "hashicorp", Name: "aws", LatestVersion: "6.46.0"},
+	}
+	editor := &fakeEditor{}
+	service := NewService(resolver, editor)
+
+	if _, err := service.UpdateProvider(context.Background(), "/work", "aws", ""); err != nil {
+		t.Fatalf("update provider: %v", err)
+	}
+	if editor.updateVersion != "6.46.0" {
+		t.Fatalf("expected latest version, got %q", editor.updateVersion)
 	}
 }
 

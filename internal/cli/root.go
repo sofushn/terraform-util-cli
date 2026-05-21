@@ -131,8 +131,8 @@ func newAddCommand(opts *options, svc service) *cobra.Command {
 				return nil
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Added provider %s", result.Provider.Source)
-			if version != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), " (%s)", version)
+			if result.VersionConstraint != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), " (%s)", result.VersionConstraint)
 			}
 			fmt.Fprintln(cmd.OutOrStdout())
 			printChangedFiles(cmd.OutOrStdout(), result.ChangedFiles)
@@ -170,7 +170,7 @@ func newRemoveCommand(opts *options, svc service) *cobra.Command {
 }
 
 func newUpdateCommand(opts *options, svc service) *cobra.Command {
-	var constraint string
+	var version string
 
 	cmd := &cobra.Command{
 		Use:     "update <provider>",
@@ -182,19 +182,23 @@ func newUpdateCommand(opts *options, svc service) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := svc.UpdateProvider(cmd.Context(), cwd, args[0], constraint)
+			result, err := svc.UpdateProvider(cmd.Context(), cwd, args[0], version)
 			if err != nil {
 				return err
 			}
 			if opts.quiet {
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Updated provider %s (%s)\n", result.Provider.Source, constraint)
+			fmt.Fprintf(cmd.OutOrStdout(), "Updated provider %s", result.Provider.Source)
+			if result.VersionConstraint != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), " (%s)", result.VersionConstraint)
+			}
+			fmt.Fprintln(cmd.OutOrStdout())
 			printChangedFiles(cmd.OutOrStdout(), result.ChangedFiles)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&constraint, "constraint", "", "provider version constraint")
+	cmd.Flags().StringVar(&version, "version", "", "provider version constraint")
 
 	return cmd
 }

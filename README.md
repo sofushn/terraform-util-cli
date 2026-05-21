@@ -26,9 +26,10 @@ Run the built CLI:
 
 ```sh
 ./terraform-registry search aws
-./terraform-registry add aws --version "~> 6.0"
+./terraform-registry add aws
 ./terraform-registry remove aws
-./terraform-registry update aws --constraint "~> 6.1"
+./terraform-registry update aws
+./terraform-registry update aws --version "~> 6.1"
 ./terraform-registry docs list aws
 ./terraform-registry docs list aws vpc
 ./terraform-registry docs aws resource/aws_vpc
