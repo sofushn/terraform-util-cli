@@ -1,0 +1,56 @@
+version: 2
+
+project_name: terraform-registry
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: terraform-registry
+    main: ./cmd/terraform-registry
+    binary: terraform-registry
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: terraform-registry
+    ids:
+      - terraform-registry
+    formats:
+      - binary
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{ .Os }}_
+      {{- .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  name_template: "{{ .ProjectName }} {{ .Tag }}"
+  header: |
+    ## Changes
+  footer: |
+    ## Artifacts
+
+    This release includes binary artifacts for Linux, macOS, and Windows.
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
