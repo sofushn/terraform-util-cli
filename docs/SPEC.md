@@ -241,6 +241,8 @@ Example:
 
 ```sh
 terraform-util docs list aws vpc
+terraform-util docs --version 5.0.0 list aws vpc
+terraform-util docs --latest list aws vpc
 ```
 
 Example output:
@@ -263,6 +265,13 @@ data/aws_vpc
 
 Keyword matching should search names, titles, and descriptions where available.
 
+Docs version flags:
+
+- `--version <version>` / `-v <version>` fetches docs for the exact requested provider version.
+- `--latest` fetches docs for the latest registry version.
+- If no docs version flag is specified, the command defaults to latest registry docs.
+- `--version` and `--latest` are mutually exclusive.
+
 ### `docs <provider> <data|resource|function>/<name>`
 
 Fetch the documentation page for a specific item.
@@ -272,11 +281,17 @@ Examples:
 ```sh
 terraform-util docs aws resource/aws_vpc
 terraform-util docs hashicorp/aws data/aws_ami
+terraform-util docs --version 5.0.0 aws resource/aws_vpc
+terraform-util docs --latest aws resource/aws_vpc
 ```
 
 Expected behavior:
 
 - Resolve the provider and latest version unless the project pins a version.
+- Default to latest registry docs when no docs version flag is specified.
+- Use `--version <version>` / `-v <version>` when an exact provider docs version is requested.
+- Use `--latest` to explicitly fetch the latest registry docs.
+- Reject commands that provide both `--version` and `--latest`.
 - Fetch the matching documentation page.
 - Emit the documentation as plain text or Markdown-like text that is readable in a terminal.
 - Do not include provider metadata in default output.
@@ -519,7 +534,8 @@ The first version may defer:
 
 ## Future Enhancements
 
-- `--version` for docs and provider edits.
+- Project-aware default docs version selection from `required_providers`.
+- `--version` for provider edits.
 - `--provider-file` and `--versions-file` options.
 - OpenTofu registry support.
 - Shell completions.

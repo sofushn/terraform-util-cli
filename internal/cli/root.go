@@ -21,9 +21,9 @@ type options struct {
 type service interface {
 	SearchProviders(context.Context, string) ([]app.Provider, error)
 	StreamSearchProviders(context.Context, string, func([]app.Provider) error) error
-	ListProviderDocs(context.Context, string, string) ([]app.DocItem, error)
-	StreamProviderDocs(context.Context, string, string, func([]app.DocItem) error) error
-	GetProviderDoc(context.Context, string, string) (app.DocPage, error)
+	ListProviderDocs(context.Context, string, string, app.DocsOptions) ([]app.DocItem, error)
+	StreamProviderDocs(context.Context, string, string, app.DocsOptions, func([]app.DocItem) error) error
+	GetProviderDoc(context.Context, string, string, app.DocsOptions) (app.DocPage, error)
 	ListProviderVersions(context.Context, string) ([]app.ProviderVersion, error)
 	AddProvider(context.Context, string, string, string) (app.ProjectResult, error)
 	UpdateProvider(context.Context, string, string, string) (app.ProjectResult, error)
@@ -32,6 +32,11 @@ type service interface {
 
 type dependencies struct {
 	service service
+}
+
+type docsFlags struct {
+	version string
+	latest  bool
 }
 
 // NewRootCommand builds the terraform-util command tree.
@@ -238,13 +243,19 @@ func newUpdateCommand(opts *options, svc service) *cobra.Command {
 }
 
 func newDocsCommand(opts *options, svc service) *cobra.Command {
+	docsOpts := &docsFlags{}
+
 	cmd := &cobra.Command{
 		Use:     "docs <provider> <data/name|resource/name|function/name>",
 		Short:   "List or fetch provider docs",
 		GroupID: "registry",
 		Args:    validateDocsPathArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			page, err := svc.GetProviderDoc(cmd.Context(), args[0], args[1])
+			appDocsOpts, err := appDocsOptions(*docsOpts)
+			if err != nil {
+				return err
+			}
+			page, err := svc.GetProviderDoc(cmd.Context(), args[0], args[1], appDocsOpts)
 			if err != nil {
 				return err
 			}
@@ -257,12 +268,14 @@ func newDocsCommand(opts *options, svc service) *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(newDocsListCommand(opts, svc))
+	cmd.PersistentFlags().StringVarP(&docsOpts.version, "version", "v", "", "provider version for docs")
+	cmd.PersistentFlags().BoolVar(&docsOpts.latest, "latest", false, "use latest provider version for docs")
+	cmd.AddCommand(newDocsListCommand(opts, docsOpts, svc))
 
 	return cmd
 }
 
-func newDocsListCommand(opts *options, svc service) *cobra.Command {
+func newDocsListCommand(opts *options, docsOpts *docsFlags, svc service) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list <provider> [keyword]",
 		Short: "List provider docs",
@@ -276,8 +289,12 @@ func newDocsListCommand(opts *options, svc service) *cobra.Command {
 				return nil
 			}
 
+			appDocsOpts, err := appDocsOptions(*docsOpts)
+			if err != nil {
+				return err
+			}
 			printedMetadata := false
-			return svc.StreamProviderDocs(cmd.Context(), args[0], keyword, func(items []app.DocItem) error {
+			return svc.StreamProviderDocs(cmd.Context(), args[0], keyword, appDocsOpts, func(items []app.DocItem) error {
 				if opts.details && !printedMetadata && len(items) > 0 {
 					printProviderMetadata(cmd.OutOrStdout(), items[0].Provider, providerDocsWebsiteURL(items[0].Provider))
 					fmt.Fprintln(cmd.OutOrStdout())
@@ -289,6 +306,14 @@ func newDocsListCommand(opts *options, svc service) *cobra.Command {
 			})
 		},
 	}
+}
+
+func appDocsOptions(flags docsFlags) (app.DocsOptions, error) {
+	version := strings.TrimSpace(flags.version)
+	if version != "" && flags.latest {
+		return app.DocsOptions{}, fmt.Errorf("--version and --latest cannot be used together")
+	}
+	return app.DocsOptions{Version: version, Latest: version == "" || flags.latest}, nil
 }
 
 func validateDocsPathArgs(cmd *cobra.Command, args []string) error {

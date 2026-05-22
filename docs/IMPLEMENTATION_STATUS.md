@@ -28,6 +28,11 @@ tracks planned follow-up work.
 - `add` and `update` use the latest provider version when no explicit version constraint is provided.
 - Local `.tf` file edits using HashiCorp HCL tooling.
 - Registry-backed `docs list <provider> [keyword]` and `docs <provider> <kind>/<name>` commands.
+- Docs version selection flags:
+  - `--version <version>`
+  - `-v <version>`
+  - `--latest`
+- Docs default to latest registry docs when no docs version flag is provided.
 - `docs list` loads all provider docs pages for resources, data sources, and functions, using registry pagination metadata when available.
 - `docs list` prints result pages progressively instead of waiting for every page to load.
 - Detailed docs output includes:
@@ -39,9 +44,5 @@ tracks planned follow-up work.
 
 ## Planned
 
-- Docs version selection:
-  - `--version <version>`
-  - `-v <version>`
-  - `--latest`
 - Default docs version selection from matching `required_providers` entries in the current Terraform project.
 - Registry-only module support for `search`, `docs`, and `versions`.

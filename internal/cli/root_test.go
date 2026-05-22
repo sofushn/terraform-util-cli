@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"terraform-util/internal/app"
@@ -470,6 +471,74 @@ func TestDocsPathKindsParse(t *testing.T) {
 	}
 }
 
+func TestDocsVersionFlagSelectsProviderVersion(t *testing.T) {
+	stdout, _, err := execute("--details", "docs", "--version", "5.0.0", "aws", "resource/aws_vpc")
+	if err != nil {
+		t.Fatalf("expected docs --version to succeed: %v", err)
+	}
+	if !strings.Contains(stdout, "Version: 5.0.0") {
+		t.Fatalf("expected docs output to use requested version, got:\n%s", stdout)
+	}
+}
+
+func TestDocsVersionShorthandSelectsProviderVersion(t *testing.T) {
+	stdout, _, err := execute("--details", "docs", "-v", "5.0.0", "aws", "resource/aws_vpc")
+	if err != nil {
+		t.Fatalf("expected docs -v to succeed: %v", err)
+	}
+	if !strings.Contains(stdout, "Version: 5.0.0") {
+		t.Fatalf("expected docs output to use requested version, got:\n%s", stdout)
+	}
+}
+
+func TestDocsDefaultsToLatestOption(t *testing.T) {
+	recorder := &recordingService{fakeService: fakeService{
+		docPage: app.DocPage{
+			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
+			Kind:     "resource",
+			Name:     "aws_vpc",
+			Content:  "# Resource: aws_vpc",
+		},
+	}}
+
+	_, _, err := executeWithService(recorder, "docs", "aws", "resource/aws_vpc")
+	if err != nil {
+		t.Fatalf("expected docs to succeed: %v", err)
+	}
+
+	if !recorder.docsOptions.Latest || recorder.docsOptions.Version != "" {
+		t.Fatalf("expected default docs options to mean latest, got %#v", recorder.docsOptions)
+	}
+}
+
+func TestDocsListVersionFlagParses(t *testing.T) {
+	_, _, err := execute("docs", "--version", "5.0.0", "list", "aws", "vpc")
+	if err != nil {
+		t.Fatalf("expected docs list --version to succeed: %v", err)
+	}
+}
+
+func TestDocsListLatestFlagParses(t *testing.T) {
+	_, _, err := execute("docs", "--latest", "list", "aws", "vpc")
+	if err != nil {
+		t.Fatalf("expected docs list --latest to succeed: %v", err)
+	}
+}
+
+func TestDocsLatestConflictsWithVersion(t *testing.T) {
+	_, _, err := execute("docs", "--latest", "--version", "5.0.0", "aws", "resource/aws_vpc")
+	if err == nil {
+		t.Fatalf("expected --latest and --version conflict to fail")
+	}
+}
+
+func TestDocsListLatestConflictsWithVersion(t *testing.T) {
+	_, _, err := execute("docs", "--latest", "--version", "5.0.0", "list", "aws")
+	if err == nil {
+		t.Fatalf("expected docs list --latest and --version conflict to fail")
+	}
+}
+
 func TestInvalidDocsPathFails(t *testing.T) {
 	_, _, err := execute("docs", "aws", "module/example")
 	if err == nil {
@@ -630,6 +699,7 @@ type fakeService struct {
 	docItems      []app.DocItem
 	docPage       app.DocPage
 	versions      []app.ProviderVersion
+	docsOptions   app.DocsOptions
 	err           error
 }
 
@@ -650,7 +720,7 @@ func (s fakeService) StreamSearchProviders(ctx context.Context, query string, yi
 	return yield(s.providers)
 }
 
-func (s fakeService) ListProviderDocs(ctx context.Context, provider string, keyword string) ([]app.DocItem, error) {
+func (s fakeService) ListProviderDocs(ctx context.Context, provider string, keyword string, opts app.DocsOptions) ([]app.DocItem, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -667,8 +737,8 @@ func (s fakeService) ListProviderDocs(ctx context.Context, provider string, keyw
 	return filtered, nil
 }
 
-func (s fakeService) StreamProviderDocs(ctx context.Context, provider string, keyword string, yield func([]app.DocItem) error) error {
-	items, err := s.ListProviderDocs(ctx, provider, keyword)
+func (s fakeService) StreamProviderDocs(ctx context.Context, provider string, keyword string, opts app.DocsOptions, yield func([]app.DocItem) error) error {
+	items, err := s.ListProviderDocs(ctx, provider, keyword, opts)
 	if err != nil {
 		return err
 	}
@@ -678,11 +748,15 @@ func (s fakeService) StreamProviderDocs(ctx context.Context, provider string, ke
 	return yield(items)
 }
 
-func (s fakeService) GetProviderDoc(ctx context.Context, provider string, docsPath string) (app.DocPage, error) {
+func (s fakeService) GetProviderDoc(ctx context.Context, provider string, docsPath string, opts app.DocsOptions) (app.DocPage, error) {
 	if s.err != nil {
 		return app.DocPage{}, s.err
 	}
-	return s.docPage, nil
+	page := s.docPage
+	if opts.Version != "" {
+		page.Provider.LatestVersion = opts.Version
+	}
+	return page, nil
 }
 
 func (s fakeService) ListProviderVersions(ctx context.Context, provider string) ([]app.ProviderVersion, error) {
@@ -711,4 +785,31 @@ func (s fakeService) RemoveProvider(ctx context.Context, cwd string, provider st
 		return app.ProjectResult{}, s.err
 	}
 	return s.projectResult, nil
+}
+
+type recordingService struct {
+	fakeService
+	mu          sync.Mutex
+	docsOptions app.DocsOptions
+}
+
+func (s *recordingService) ListProviderDocs(ctx context.Context, provider string, keyword string, opts app.DocsOptions) ([]app.DocItem, error) {
+	s.recordDocsOptions(opts)
+	return s.fakeService.ListProviderDocs(ctx, provider, keyword, opts)
+}
+
+func (s *recordingService) StreamProviderDocs(ctx context.Context, provider string, keyword string, opts app.DocsOptions, yield func([]app.DocItem) error) error {
+	s.recordDocsOptions(opts)
+	return s.fakeService.StreamProviderDocs(ctx, provider, keyword, opts, yield)
+}
+
+func (s *recordingService) GetProviderDoc(ctx context.Context, provider string, docsPath string, opts app.DocsOptions) (app.DocPage, error) {
+	s.recordDocsOptions(opts)
+	return s.fakeService.GetProviderDoc(ctx, provider, docsPath, opts)
+}
+
+func (s *recordingService) recordDocsOptions(opts app.DocsOptions) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.docsOptions = opts
 }

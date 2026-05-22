@@ -52,6 +52,11 @@ type ProviderVersion struct {
 	PublishedAt string
 }
 
+type DocsOptions struct {
+	Version string
+	Latest  bool
+}
+
 type AddProviderOptions struct {
 	VersionConstraint string
 }
@@ -102,11 +107,12 @@ func (s Service) StreamSearchProviders(ctx context.Context, query string, yield 
 	return s.resolver.StreamSearchProviders(ctx, query, yield)
 }
 
-func (s Service) ListProviderDocs(ctx context.Context, providerInput string, keyword string) ([]DocItem, error) {
+func (s Service) ListProviderDocs(ctx context.Context, providerInput string, keyword string, opts DocsOptions) ([]DocItem, error) {
 	provider, err := s.resolver.ResolveProvider(ctx, providerInput)
 	if err != nil {
 		return nil, err
 	}
+	provider = providerForDocsVersion(provider, opts)
 
 	items, err := s.docs.ListProviderDocs(ctx, provider)
 	if err != nil {
@@ -127,11 +133,12 @@ func (s Service) ListProviderDocs(ctx context.Context, providerInput string, key
 	return filtered, nil
 }
 
-func (s Service) StreamProviderDocs(ctx context.Context, providerInput string, keyword string, yield func([]DocItem) error) error {
+func (s Service) StreamProviderDocs(ctx context.Context, providerInput string, keyword string, opts DocsOptions, yield func([]DocItem) error) error {
 	provider, err := s.resolver.ResolveProvider(ctx, providerInput)
 	if err != nil {
 		return err
 	}
+	provider = providerForDocsVersion(provider, opts)
 
 	keyword = strings.ToLower(strings.TrimSpace(keyword))
 	return s.docs.StreamProviderDocs(ctx, provider, func(items []DocItem) error {
@@ -149,7 +156,7 @@ func (s Service) StreamProviderDocs(ctx context.Context, providerInput string, k
 	})
 }
 
-func (s Service) GetProviderDoc(ctx context.Context, providerInput string, docsPath string) (DocPage, error) {
+func (s Service) GetProviderDoc(ctx context.Context, providerInput string, docsPath string, opts DocsOptions) (DocPage, error) {
 	kind, name, err := parseDocsPath(docsPath)
 	if err != nil {
 		return DocPage{}, err
@@ -159,6 +166,7 @@ func (s Service) GetProviderDoc(ctx context.Context, providerInput string, docsP
 	if err != nil {
 		return DocPage{}, err
 	}
+	provider = providerForDocsVersion(provider, opts)
 
 	return s.docs.GetProviderDoc(ctx, provider, kind, name)
 }
@@ -221,6 +229,16 @@ func withDefaultVersion(versionConstraint string, latestVersion string) string {
 		return versionConstraint
 	}
 	return latestVersion
+}
+
+func providerForDocsVersion(provider Provider, opts DocsOptions) Provider {
+	if opts.Latest {
+		return provider
+	}
+	if strings.TrimSpace(opts.Version) != "" {
+		provider.LatestVersion = strings.TrimSpace(opts.Version)
+	}
+	return provider
 }
 
 func parseDocsPath(path string) (string, string, error) {

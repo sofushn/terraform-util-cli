@@ -193,7 +193,7 @@ func TestListProviderDocsResolvesAndFilters(t *testing.T) {
 	}
 	service := NewService(resolver, resolver, &fakeEditor{})
 
-	items, err := service.ListProviderDocs(context.Background(), "aws", "vpc")
+	items, err := service.ListProviderDocs(context.Background(), "aws", "vpc", DocsOptions{})
 	if err != nil {
 		t.Fatalf("list provider docs: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestStreamProviderDocsResolvesAndFilters(t *testing.T) {
 	service := NewService(resolver, resolver, &fakeEditor{})
 
 	var pages [][]DocItem
-	err := service.StreamProviderDocs(context.Background(), "aws", "vpc", func(items []DocItem) error {
+	err := service.StreamProviderDocs(context.Background(), "aws", "vpc", DocsOptions{}, func(items []DocItem) error {
 		pages = append(pages, items)
 		return nil
 	})
@@ -256,7 +256,7 @@ func TestGetProviderDocResolvesAndFetchesPath(t *testing.T) {
 	}
 	service := NewService(resolver, resolver, &fakeEditor{})
 
-	page, err := service.GetProviderDoc(context.Background(), "aws", "resource/aws_vpc")
+	page, err := service.GetProviderDoc(context.Background(), "aws", "resource/aws_vpc", DocsOptions{})
 	if err != nil {
 		t.Fatalf("get provider doc: %v", err)
 	}
@@ -266,6 +266,71 @@ func TestGetProviderDocResolvesAndFetchesPath(t *testing.T) {
 	}
 	if page.Provider.Source != "registry.terraform.io/hashicorp/aws" || page.Content != "# Resource: aws_vpc" {
 		t.Fatalf("unexpected doc page: %#v", page)
+	}
+}
+
+func TestDocsVersionOptionOverridesResolvedLatestVersion(t *testing.T) {
+	resolver := &fakeResolver{
+		resolved: Provider{
+			Source:        "registry.terraform.io/hashicorp/aws",
+			Namespace:     "hashicorp",
+			Name:          "aws",
+			LatestVersion: "6.46.0",
+		},
+		docPage: DocPage{
+			Kind:    "resource",
+			Name:    "aws_vpc",
+			Content: "# Resource: aws_vpc",
+		},
+	}
+	service := NewService(resolver, resolver, &fakeEditor{})
+
+	page, err := service.GetProviderDoc(context.Background(), "aws", "resource/aws_vpc", DocsOptions{Version: "5.0.0"})
+	if err != nil {
+		t.Fatalf("get provider doc: %v", err)
+	}
+
+	if resolver.docProvider.LatestVersion != "5.0.0" {
+		t.Fatalf("expected docs provider version 5.0.0, got %#v", resolver.docProvider)
+	}
+	if page.Provider.LatestVersion != "5.0.0" {
+		t.Fatalf("expected page provider version 5.0.0, got %#v", page.Provider)
+	}
+}
+
+func TestDocsDefaultAndLatestUseResolvedLatestVersion(t *testing.T) {
+	tests := []struct {
+		name string
+		opts DocsOptions
+	}{
+		{name: "default", opts: DocsOptions{}},
+		{name: "latest", opts: DocsOptions{Latest: true}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolver := &fakeResolver{
+				resolved: Provider{
+					Source:        "registry.terraform.io/hashicorp/aws",
+					Namespace:     "hashicorp",
+					Name:          "aws",
+					LatestVersion: "6.46.0",
+				},
+				docPage: DocPage{
+					Kind:    "resource",
+					Name:    "aws_vpc",
+					Content: "# Resource: aws_vpc",
+				},
+			}
+			service := NewService(resolver, resolver, &fakeEditor{})
+
+			if _, err := service.GetProviderDoc(context.Background(), "aws", "resource/aws_vpc", tt.opts); err != nil {
+				t.Fatalf("get provider doc: %v", err)
+			}
+			if resolver.docProvider.LatestVersion != "6.46.0" {
+				t.Fatalf("expected resolved latest version, got %#v", resolver.docProvider)
+			}
+		})
 	}
 }
 
@@ -314,6 +379,7 @@ type fakeResolver struct {
 	listVersionsCalls int
 	docKind           string
 	docName           string
+	docProvider       Provider
 }
 
 func (r *fakeResolver) SearchProviders(ctx context.Context, query string) ([]Provider, error) {
@@ -345,6 +411,7 @@ func (r *fakeResolver) ResolveProvider(ctx context.Context, query string) (Provi
 
 func (r *fakeResolver) ListProviderDocs(ctx context.Context, provider Provider) ([]DocItem, error) {
 	r.listDocsCalls++
+	r.docProvider = provider
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -358,6 +425,7 @@ func (r *fakeResolver) ListProviderDocs(ctx context.Context, provider Provider) 
 
 func (r *fakeResolver) StreamProviderDocs(ctx context.Context, provider Provider, yield func([]DocItem) error) error {
 	r.streamDocsCalls++
+	r.docProvider = provider
 	if r.err != nil {
 		return r.err
 	}
@@ -372,6 +440,7 @@ func (r *fakeResolver) StreamProviderDocs(ctx context.Context, provider Provider
 func (r *fakeResolver) GetProviderDoc(ctx context.Context, provider Provider, kind string, name string) (DocPage, error) {
 	r.docKind = kind
 	r.docName = name
+	r.docProvider = provider
 	if r.err != nil {
 		return DocPage{}, r.err
 	}

@@ -121,6 +121,8 @@ List available resources, data sources, and functions:
 terraform-util docs list aws
 terraform-util docs list aws vpc
 terraform-util --details docs list aws vpc
+terraform-util docs --version 5.0.0 list aws vpc
+terraform-util docs --latest list aws vpc
 ```
 
 Default list output is one docs path per line:
@@ -137,6 +139,8 @@ Fetch a specific docs page:
 terraform-util docs aws resource/aws_vpc
 terraform-util docs hashicorp/aws data/aws_ami
 terraform-util docs aws function/arn_parse
+terraform-util docs --version 5.0.0 aws resource/aws_vpc
+terraform-util docs --latest aws resource/aws_vpc
 ```
 
 Default docs output is the markdown-like documentation body only. Use `--details` when you need provider, version, Terraform Registry website URL, doc path, and source URL metadata:
@@ -144,6 +148,8 @@ Default docs output is the markdown-like documentation body only. Use `--details
 ```sh
 terraform-util --details docs aws resource/aws_vpc
 ```
+
+Docs default to latest registry docs. Use `--version <version>` or `-v <version>` when you need docs for a specific provider version. Use `--latest` when you want to be explicit about latest docs. Do not combine `--version` and `--latest`.
 
 Agent pattern:
 
