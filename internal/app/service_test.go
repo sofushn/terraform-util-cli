@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -334,6 +336,66 @@ func TestDocsDefaultAndLatestUseResolvedLatestVersion(t *testing.T) {
 	}
 }
 
+func TestDocsDefaultUsesProjectLockVersion(t *testing.T) {
+	dir := t.TempDir()
+	writeAppTestFile(t, dir, ".terraform.lock.hcl", `provider "registry.terraform.io/hashicorp/aws" {
+  version = "5.0.0"
+}
+`)
+	resolver := &fakeResolver{
+		resolved: Provider{
+			Source:        "registry.terraform.io/hashicorp/aws",
+			Namespace:     "hashicorp",
+			Name:          "aws",
+			LatestVersion: "6.46.0",
+		},
+		docPage: DocPage{Kind: "resource", Name: "aws_vpc", Content: "# Resource: aws_vpc"},
+	}
+	service := NewService(resolver, resolver, &fakeEditor{})
+
+	if _, err := service.GetProviderDoc(context.Background(), "aws", "resource/aws_vpc", DocsOptions{CWD: dir}); err != nil {
+		t.Fatalf("get provider doc: %v", err)
+	}
+	if resolver.docProvider.LatestVersion != "5.0.0" {
+		t.Fatalf("expected lock version, got %#v", resolver.docProvider)
+	}
+}
+
+func TestDocsDefaultUsesNewestRequiredProviderConstraintMatch(t *testing.T) {
+	dir := t.TempDir()
+	writeAppTestFile(t, dir, "versions.tf", `terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+`)
+	resolver := &fakeResolver{
+		resolved: Provider{
+			Source:        "registry.terraform.io/hashicorp/aws",
+			Namespace:     "hashicorp",
+			Name:          "aws",
+			LatestVersion: "6.46.0",
+		},
+		docPage: DocPage{Kind: "resource", Name: "aws_vpc", Content: "# Resource: aws_vpc"},
+		versions: []ProviderVersion{
+			{Version: "6.0.0"},
+			{Version: "5.2.0"},
+			{Version: "5.1.0"},
+		},
+	}
+	service := NewService(resolver, resolver, &fakeEditor{})
+
+	if _, err := service.GetProviderDoc(context.Background(), "aws", "resource/aws_vpc", DocsOptions{CWD: dir}); err != nil {
+		t.Fatalf("get provider doc: %v", err)
+	}
+	if resolver.docProvider.LatestVersion != "5.2.0" {
+		t.Fatalf("expected newest matching constraint version, got %#v", resolver.docProvider)
+	}
+}
+
 func TestListProviderVersionsResolvesProvider(t *testing.T) {
 	resolver := &fakeResolver{
 		resolved: Provider{
@@ -359,6 +421,13 @@ func TestListProviderVersionsResolvesProvider(t *testing.T) {
 	}
 	if len(versions) != 1 || versions[0].Provider.Source != "registry.terraform.io/hashicorp/aws" || versions[0].Version != "6.46.0" {
 		t.Fatalf("unexpected versions: %#v", versions)
+	}
+}
+
+func writeAppTestFile(t *testing.T, dir string, name string, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+		t.Fatalf("write %s: %v", name, err)
 	}
 }
 

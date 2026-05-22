@@ -491,7 +491,7 @@ func TestDocsVersionShorthandSelectsProviderVersion(t *testing.T) {
 	}
 }
 
-func TestDocsDefaultsToLatestOption(t *testing.T) {
+func TestDocsDefaultPassesCurrentWorkingDirectory(t *testing.T) {
 	recorder := &recordingService{fakeService: fakeService{
 		docPage: app.DocPage{
 			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
@@ -506,8 +506,8 @@ func TestDocsDefaultsToLatestOption(t *testing.T) {
 		t.Fatalf("expected docs to succeed: %v", err)
 	}
 
-	if !recorder.docsOptions.Latest || recorder.docsOptions.Version != "" {
-		t.Fatalf("expected default docs options to mean latest, got %#v", recorder.docsOptions)
+	if recorder.docsOptions.Latest || recorder.docsOptions.Version != "" || recorder.docsOptions.CWD == "" {
+		t.Fatalf("expected default docs options with cwd and no explicit version flags, got %#v", recorder.docsOptions)
 	}
 }
 

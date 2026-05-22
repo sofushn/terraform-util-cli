@@ -149,7 +149,7 @@ Default docs output is the markdown-like documentation body only. Use `--details
 terraform-util --details docs aws resource/aws_vpc
 ```
 
-Docs default to latest registry docs. Use `--version <version>` or `-v <version>` when you need docs for a specific provider version. Use `--latest` when you want to be explicit about latest docs. Do not combine `--version` and `--latest`.
+When no docs version flag is provided, docs default to the current project version when available: `.terraform.lock.hcl` first, then matching `required_providers`; non-exact required provider constraints resolve to the newest matching registry version. If no project version is available, docs fall back to latest registry docs. Use `--version <version>` or `-v <version>` when you need docs for a specific provider version. Use `--latest` when you want to force latest docs. Do not combine `--version` and `--latest`.
 
 Agent pattern:
 

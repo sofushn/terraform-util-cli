@@ -199,6 +199,73 @@ func TestInvalidTerraformFailsBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestFindProviderVersionHintPrefersLockFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, ".terraform.lock.hcl", `provider "registry.terraform.io/hashicorp/aws" {
+  version = "5.0.0"
+}
+`)
+	writeFile(t, dir, "versions.tf", `terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+      version = "4.0.0"
+    }
+  }
+}
+`)
+
+	hint, ok, err := FindProviderVersionHint(dir, "aws")
+	if err != nil {
+		t.Fatalf("find provider version hint: %v", err)
+	}
+	if !ok || hint.Version != "5.0.0" {
+		t.Fatalf("expected lock version, got ok=%v hint=%#v", ok, hint)
+	}
+}
+
+func TestFindProviderVersionHintReadsExactRequiredProviderVersion(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "versions.tf", `terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+      version = "4.0.0"
+    }
+  }
+}
+`)
+
+	hint, ok, err := FindProviderVersionHint(dir, "hashicorp/aws")
+	if err != nil {
+		t.Fatalf("find provider version hint: %v", err)
+	}
+	if !ok || hint.Version != "4.0.0" || hint.Constraint != "4.0.0" {
+		t.Fatalf("expected exact required provider version, got ok=%v hint=%#v", ok, hint)
+	}
+}
+
+func TestFindProviderVersionHintReadsRequiredProviderConstraint(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "versions.tf", `terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+      version = "~> 4.0"
+    }
+  }
+}
+`)
+
+	hint, ok, err := FindProviderVersionHint(dir, "aws")
+	if err != nil {
+		t.Fatalf("find provider version hint: %v", err)
+	}
+	if !ok || hint.Version != "" || hint.Constraint != "~> 4.0" {
+		t.Fatalf("expected required provider constraint, got ok=%v hint=%#v", ok, hint)
+	}
+}
+
 func readFile(t *testing.T, dir string, name string) string {
 	t.Helper()
 

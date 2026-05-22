@@ -269,7 +269,11 @@ Docs version flags:
 
 - `--version <version>` / `-v <version>` fetches docs for the exact requested provider version.
 - `--latest` fetches docs for the latest registry version.
-- If no docs version flag is specified, the command defaults to latest registry docs.
+- If no docs version flag is specified, the command first checks `.terraform.lock.hcl` for the matching provider version.
+- If no matching lock entry exists, the command checks `terraform.required_providers`.
+- Exact required provider versions are used directly.
+- Non-exact required provider constraints are resolved to the newest matching registry version.
+- If no usable project version exists, the command falls back to latest registry docs.
 - `--version` and `--latest` are mutually exclusive.
 
 ### `docs <provider> <data|resource|function>/<name>`
@@ -287,8 +291,7 @@ terraform-util docs --latest aws resource/aws_vpc
 
 Expected behavior:
 
-- Resolve the provider and latest version unless the project pins a version.
-- Default to latest registry docs when no docs version flag is specified.
+- Resolve the provider and docs version using explicit flags, project lock file, required provider constraints, or latest fallback.
 - Use `--version <version>` / `-v <version>` when an exact provider docs version is requested.
 - Use `--latest` to explicitly fetch the latest registry docs.
 - Reject commands that provide both `--version` and `--latest`.

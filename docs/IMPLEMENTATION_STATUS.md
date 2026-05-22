@@ -32,7 +32,8 @@ tracks planned follow-up work.
   - `--version <version>`
   - `-v <version>`
   - `--latest`
-- Docs default to latest registry docs when no docs version flag is provided.
+- Docs version default checks `.terraform.lock.hcl`, then `required_providers`, then latest registry docs.
+- Non-exact `required_providers` constraints resolve to the newest matching registry version.
 - `docs list` loads all provider docs pages for resources, data sources, and functions, using registry pagination metadata when available.
 - `docs list` prints result pages progressively instead of waiting for every page to load.
 - Detailed docs output includes:
@@ -44,5 +45,4 @@ tracks planned follow-up work.
 
 ## Planned
 
-- Default docs version selection from matching `required_providers` entries in the current Terraform project.
 - Registry-only module support for `search`, `docs`, and `versions`.

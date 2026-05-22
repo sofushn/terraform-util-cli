@@ -255,6 +255,7 @@ func newDocsCommand(opts *options, svc service) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			appDocsOpts.CWD = currentWorkingDirectory()
 			page, err := svc.GetProviderDoc(cmd.Context(), args[0], args[1], appDocsOpts)
 			if err != nil {
 				return err
@@ -293,6 +294,7 @@ func newDocsListCommand(opts *options, docsOpts *docsFlags, svc service) *cobra.
 			if err != nil {
 				return err
 			}
+			appDocsOpts.CWD = currentWorkingDirectory()
 			printedMetadata := false
 			return svc.StreamProviderDocs(cmd.Context(), args[0], keyword, appDocsOpts, func(items []app.DocItem) error {
 				if opts.details && !printedMetadata && len(items) > 0 {
@@ -313,7 +315,15 @@ func appDocsOptions(flags docsFlags) (app.DocsOptions, error) {
 	if version != "" && flags.latest {
 		return app.DocsOptions{}, fmt.Errorf("--version and --latest cannot be used together")
 	}
-	return app.DocsOptions{Version: version, Latest: version == "" || flags.latest}, nil
+	return app.DocsOptions{Version: version, Latest: flags.latest}, nil
+}
+
+func currentWorkingDirectory() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return cwd
 }
 
 func validateDocsPathArgs(cmd *cobra.Command, args []string) error {

@@ -56,14 +56,16 @@ Version selection precedence:
 
 1. `--latest` fetches docs for the latest registry version.
 2. `--version` / `-v` fetches docs for the exact requested provider version.
-3. If neither flag is provided, inspect the current directory for a matching provider in `terraform.required_providers` and use that version when it is an exact version.
-4. If no matching required provider or exact version is found, fetch latest docs.
+3. If neither flag is provided, inspect `.terraform.lock.hcl` for a matching provider and use the locked version.
+4. If no matching lock entry exists, inspect the current directory for a matching provider in `terraform.required_providers`.
+5. If the required provider has an exact version, use it.
+6. If it has a non-exact constraint, resolve the newest matching registry version.
+7. If no matching project version is found, fetch latest docs.
 
 `--latest` and `--version` are mutually exclusive.
 
 If the current project has a non-exact version constraint such as `~> 6.0`, `>= 5.0`, or
-`>= 5.0, < 7.0`, the CLI should either resolve the newest matching version or clearly fall
-back to latest. The preferred final behavior is to resolve the newest matching version.
+`>= 5.0, < 7.0`, the CLI should resolve the newest matching version.
 
 ## Search Output Changes
 
