@@ -127,6 +127,8 @@ Version ordering should be newest first.
 
 ## Module Registry Support
 
+Detailed feature spec: [MODULE_SUPPORT_SPEC.md](MODULE_SUPPORT_SPEC.md)
+
 Add support for Terraform Registry modules to registry commands only.
 
 Affected commands:
