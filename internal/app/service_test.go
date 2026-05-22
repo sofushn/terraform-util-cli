@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -174,6 +175,66 @@ func TestStreamSearchProvidersDelegatesToResolver(t *testing.T) {
 	}
 	if len(pages) != 1 || len(pages[0]) != 1 || pages[0][0].Source != "registry.terraform.io/hashicorp/aws" {
 		t.Fatalf("unexpected pages: %#v", pages)
+	}
+}
+
+func TestStreamSearchDispatchesModuleAndAllTypes(t *testing.T) {
+	tests := []struct {
+		name             string
+		searchType       SearchType
+		wantProviderCall int
+		wantModuleCall   int
+		wantTypes        []SearchType
+	}{
+		{
+			name:           "module",
+			searchType:     SearchTypeModule,
+			wantModuleCall: 1,
+			wantTypes:      []SearchType{SearchTypeModule},
+		},
+		{
+			name:             "all",
+			searchType:       SearchTypeAll,
+			wantProviderCall: 1,
+			wantModuleCall:   1,
+			wantTypes:        []SearchType{SearchTypeProvider, SearchTypeModule},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolver := &fakeResolver{
+				providers: []Provider{{
+					Namespace:     "hashicorp",
+					Name:          "aws",
+					DisplayName:   "aws",
+					LatestVersion: "6.46.0",
+				}},
+				modules: []Module{{
+					Source:        "registry.terraform.io/terraform-aws-modules/vpc/aws",
+					Name:          "vpc",
+					LatestVersion: "6.6.1",
+				}},
+			}
+			service := NewService(resolver, resolver, &fakeEditor{})
+
+			var gotTypes []SearchType
+			err := service.StreamSearch(context.Background(), "aws", tt.searchType, func(results []SearchResult) error {
+				for _, result := range results {
+					gotTypes = append(gotTypes, result.Type)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("stream search: %v", err)
+			}
+			if resolver.streamSearchCalls != tt.wantProviderCall || resolver.streamModuleSearchCalls != tt.wantModuleCall {
+				t.Fatalf("unexpected calls: provider=%d module=%d", resolver.streamSearchCalls, resolver.streamModuleSearchCalls)
+			}
+			if strings.Join(searchTypes(gotTypes), ",") != strings.Join(searchTypes(tt.wantTypes), ",") {
+				t.Fatalf("unexpected result types: %#v", gotTypes)
+			}
+		})
 	}
 }
 
@@ -424,6 +485,44 @@ func TestListProviderVersionsResolvesProvider(t *testing.T) {
 	}
 }
 
+func TestModuleDocsAndVersionsDelegateToModuleRegistry(t *testing.T) {
+	resolver := &fakeResolver{
+		modulePage: ModuleDocPage{
+			Module:  Module{Source: "registry.terraform.io/terraform-aws-modules/vpc/aws", LatestVersion: "6.6.1"},
+			Content: "# README",
+		},
+		moduleVersions: []ModuleVersion{{
+			Module:  Module{Source: "registry.terraform.io/terraform-aws-modules/vpc/aws"},
+			Version: "6.6.1",
+		}},
+	}
+	service := NewService(resolver, resolver, &fakeEditor{})
+
+	page, err := service.GetModuleDoc(context.Background(), "terraform-aws-modules/vpc/aws", DocsOptions{Version: "6.0.0", CWD: "/ignored"})
+	if err != nil {
+		t.Fatalf("get module doc: %v", err)
+	}
+	if resolver.moduleDocInput != "terraform-aws-modules/vpc/aws" || resolver.moduleDocVersion != "6.0.0" || page.Content != "# README" {
+		t.Fatalf("unexpected module doc call: input=%q version=%q page=%#v", resolver.moduleDocInput, resolver.moduleDocVersion, page)
+	}
+
+	versions, err := service.ListModuleVersions(context.Background(), "terraform-aws-modules/vpc/aws")
+	if err != nil {
+		t.Fatalf("list module versions: %v", err)
+	}
+	if resolver.listModuleVersionsCalls != 1 || len(versions) != 1 || versions[0].Version != "6.6.1" {
+		t.Fatalf("unexpected module versions: calls=%d versions=%#v", resolver.listModuleVersionsCalls, versions)
+	}
+}
+
+func searchTypes(types []SearchType) []string {
+	out := make([]string, 0, len(types))
+	for _, item := range types {
+		out = append(out, string(item))
+	}
+	return out
+}
+
 func writeAppTestFile(t *testing.T, dir string, name string, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
@@ -432,23 +531,30 @@ func writeAppTestFile(t *testing.T, dir string, name string, content string) {
 }
 
 type fakeResolver struct {
-	providers         []Provider
-	resolved          Provider
-	docs              []DocItem
-	docPage           DocPage
-	versions          []ProviderVersion
-	err               error
-	searchCalls       int
-	streamSearchCalls int
-	searchQuery       string
-	resolveCalls      int
-	resolveQuery      string
-	listDocsCalls     int
-	streamDocsCalls   int
-	listVersionsCalls int
-	docKind           string
-	docName           string
-	docProvider       Provider
+	providers               []Provider
+	modules                 []Module
+	resolved                Provider
+	docs                    []DocItem
+	docPage                 DocPage
+	modulePage              ModuleDocPage
+	versions                []ProviderVersion
+	moduleVersions          []ModuleVersion
+	err                     error
+	searchCalls             int
+	streamSearchCalls       int
+	searchQuery             string
+	resolveCalls            int
+	resolveQuery            string
+	listDocsCalls           int
+	streamDocsCalls         int
+	listVersionsCalls       int
+	streamModuleSearchCalls int
+	listModuleVersionsCalls int
+	docKind                 string
+	docName                 string
+	docProvider             Provider
+	moduleDocInput          string
+	moduleDocVersion        string
 }
 
 func (r *fakeResolver) SearchProviders(ctx context.Context, query string) ([]Provider, error) {
@@ -529,6 +635,38 @@ func (r *fakeResolver) ListProviderVersions(ctx context.Context, provider Provid
 		out[i].Provider = provider
 	}
 	return out, nil
+}
+
+func (r *fakeResolver) SearchModules(ctx context.Context, query string) ([]Module, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.modules, nil
+}
+
+func (r *fakeResolver) StreamSearchModules(ctx context.Context, query string, yield func([]Module) error) error {
+	r.streamModuleSearchCalls++
+	if r.err != nil {
+		return r.err
+	}
+	return yield(r.modules)
+}
+
+func (r *fakeResolver) GetModuleDoc(ctx context.Context, moduleInput string, version string) (ModuleDocPage, error) {
+	r.moduleDocInput = moduleInput
+	r.moduleDocVersion = version
+	if r.err != nil {
+		return ModuleDocPage{}, r.err
+	}
+	return r.modulePage, nil
+}
+
+func (r *fakeResolver) ListModuleVersions(ctx context.Context, moduleInput string) ([]ModuleVersion, error) {
+	r.listModuleVersionsCalls++
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.moduleVersions, nil
 }
 
 type fakeEditor struct {

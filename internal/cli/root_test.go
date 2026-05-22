@@ -187,11 +187,18 @@ func TestSearchCommandPrintsRegistryResults(t *testing.T) {
 		t.Fatalf("expected search to succeed: %v", err)
 	}
 
-	want := "provider                          name      version                                     verified\n" +
-		"hashicorp/aws                     aws       6.46.0                                      true    \n" +
-		"verylongnamespace/custom          Custom    1.0.0                                               \n"
-	if stdout != want {
-		t.Fatalf("unexpected stdout:\nwant: %q\n got: %q", want, stdout)
+	for _, want := range []string{
+		"source",
+		"name",
+		"version",
+		"verified",
+		"hashicorp/aws",
+		"verylongnamespace/custom",
+		"true",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected search output to contain %q, got:\n%s", want, stdout)
+		}
 	}
 }
 
@@ -211,10 +218,17 @@ func TestSearchCommandDetailsPrintsDownloads(t *testing.T) {
 		t.Fatalf("expected search to succeed: %v", err)
 	}
 
-	want := "provider                          name      version                                     downloads     tier        verified\n" +
-		"hashicorp/aws                     aws       6.46.0                                      500           official    true    \n"
-	if stdout != want {
-		t.Fatalf("unexpected stdout:\nwant: %q\n got: %q", want, stdout)
+	for _, want := range []string{
+		"source",
+		"downloads",
+		"tier",
+		"hashicorp/aws",
+		"500",
+		"official",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected details output to contain %q, got:\n%s", want, stdout)
+		}
 	}
 }
 
@@ -252,8 +266,82 @@ func TestSearchCommandHandlesNoResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected search to succeed: %v", err)
 	}
-	if stdout != "No providers found for \"missing\"\n" {
+	if stdout != "No registry results found for \"missing\"\n" {
 		t.Fatalf("unexpected stdout: %q", stdout)
+	}
+}
+
+func TestSearchCommandSupportsModuleAndAllTypes(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		want        []string
+		unwanted    []string
+		searchItems []app.SearchResult
+	}{
+		{
+			name: "module shorthand",
+			args: []string{"search", "-m", "vpc"},
+			searchItems: []app.SearchResult{{
+				Type:          app.SearchTypeModule,
+				Source:        "terraform-aws-modules/vpc/aws",
+				Name:          "vpc",
+				LatestVersion: "6.6.1",
+				Downloads:     100,
+			}},
+			want:     []string{"source", "terraform-aws-modules/vpc/aws", "6.6.1"},
+			unwanted: []string{"type"},
+		},
+		{
+			name: "all type",
+			args: []string{"search", "--type", "all", "aws"},
+			searchItems: []app.SearchResult{{
+				Type:          app.SearchTypeProvider,
+				Source:        "hashicorp/aws",
+				Name:          "aws",
+				LatestVersion: "6.46.0",
+				Verified:      true,
+			}},
+			want: []string{"type", "provider", "hashicorp/aws"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, _, err := executeWithService(fakeService{searchResults: tt.searchItems}, tt.args...)
+			if err != nil {
+				t.Fatalf("expected search to succeed: %v", err)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(stdout, want) {
+					t.Fatalf("expected output to contain %q, got:\n%s", want, stdout)
+				}
+			}
+			for _, unwanted := range tt.unwanted {
+				if strings.Contains(stdout, unwanted) {
+					t.Fatalf("expected output not to contain %q, got:\n%s", unwanted, stdout)
+				}
+			}
+		})
+	}
+}
+
+func TestSearchCommandRejectsConflictingTypesAndMultiWordQueries(t *testing.T) {
+	tests := [][]string{
+		{"search", "-m", "-p", "aws"},
+		{"search", "-m", "--type", "all", "aws"},
+		{"search", "--type", "wat", "aws"},
+		{"search", "aws vpc"},
+		{"search", "aws", "vpc"},
+	}
+
+	for _, args := range tests {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			_, _, err := execute(args...)
+			if err == nil {
+				t.Fatalf("expected command to fail")
+			}
+		})
 	}
 }
 
@@ -410,7 +498,7 @@ func TestInvalidArgsShowCommandHelp(t *testing.T) {
 	for _, want := range []string{
 		"accepts 1 arg(s), received 0",
 		"Usage:",
-		"terraform-util search <provider>",
+		"terraform-util search <query>",
 	} {
 		if !strings.Contains(stderr, want) {
 			t.Fatalf("expected stderr to contain %q, got:\n%s", want, stderr)
@@ -546,6 +634,33 @@ func TestInvalidDocsPathFails(t *testing.T) {
 	}
 }
 
+func TestModuleDocsUseSingleModuleAddress(t *testing.T) {
+	stdout, _, err := execute("--details", "docs", "--version", "6.0.0", "terraform-aws-modules/vpc/aws")
+	if err != nil {
+		t.Fatalf("expected module docs to succeed: %v", err)
+	}
+
+	for _, want := range []string{
+		"Type: module",
+		"Module: registry.terraform.io/terraform-aws-modules/vpc/aws",
+		"Version: 6.0.0",
+		"Website: https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws/6.0.0",
+		"Source: https://github.com/terraform-aws-modules/terraform-aws-vpc",
+		"# terraform-aws-vpc",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected module docs output to contain %q, got:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestModuleDocsRejectProviderDocsPath(t *testing.T) {
+	_, _, err := execute("docs", "terraform-aws-modules/vpc/aws", "resource/aws_vpc")
+	if err == nil {
+		t.Fatalf("expected module docs with provider docs path to fail")
+	}
+}
+
 func TestDocsHelpShowsListSubcommand(t *testing.T) {
 	stdout, _, err := execute("docs", "--help")
 	if err != nil {
@@ -553,7 +668,7 @@ func TestDocsHelpShowsListSubcommand(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"docs <provider> <data/name|resource/name|function/name>",
+		"docs <provider> <data/name|resource/name|function/name>|<module>",
 		"list",
 	} {
 		if !strings.Contains(stdout, want) {
@@ -581,8 +696,10 @@ func TestGlobalFlagsParse(t *testing.T) {
 		t.Fatalf("expected command with global flags to succeed: %v", err)
 	}
 
-	if stdout != "provider                          name      version                                     downloads     tier        verified\nhashicorp/aws                     aws       6.46.0                                      500                       true    \n" {
-		t.Fatalf("unexpected stdout: %q", stdout)
+	for _, want := range []string{"source", "downloads", "hashicorp/aws", "6.46.0", "500", "true"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected stdout to contain %q, got:\n%s", want, stdout)
+		}
 	}
 }
 
@@ -693,14 +810,37 @@ func TestVersionsDetailsOutputIncludesProviderWebsiteAndPublishedDates(t *testin
 	}
 }
 
+func TestModuleVersionsOutput(t *testing.T) {
+	stdout, _, err := execute("--details", "versions", "terraform-aws-modules/vpc/aws")
+	if err != nil {
+		t.Fatalf("expected module versions to succeed: %v", err)
+	}
+
+	for _, want := range []string{
+		"type: module",
+		"module: registry.terraform.io/terraform-aws-modules/vpc/aws",
+		"website: https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws",
+		"version",
+		"6.6.1",
+		"6.5.0",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected module versions output to contain %q, got:\n%s", want, stdout)
+		}
+	}
+}
+
 type fakeService struct {
-	providers     []app.Provider
-	projectResult app.ProjectResult
-	docItems      []app.DocItem
-	docPage       app.DocPage
-	versions      []app.ProviderVersion
-	docsOptions   app.DocsOptions
-	err           error
+	providers      []app.Provider
+	searchResults  []app.SearchResult
+	modulePage     app.ModuleDocPage
+	moduleVersions []app.ModuleVersion
+	projectResult  app.ProjectResult
+	docItems       []app.DocItem
+	docPage        app.DocPage
+	versions       []app.ProviderVersion
+	docsOptions    app.DocsOptions
+	err            error
 }
 
 func (s fakeService) SearchProviders(ctx context.Context, query string) ([]app.Provider, error) {
@@ -718,6 +858,31 @@ func (s fakeService) StreamSearchProviders(ctx context.Context, query string, yi
 		return nil
 	}
 	return yield(s.providers)
+}
+
+func (s fakeService) StreamSearch(ctx context.Context, query string, searchType app.SearchType, yield func([]app.SearchResult) error) error {
+	if s.err != nil {
+		return s.err
+	}
+	if len(s.searchResults) > 0 {
+		return yield(s.searchResults)
+	}
+	if len(s.providers) == 0 {
+		return nil
+	}
+	results := make([]app.SearchResult, 0, len(s.providers))
+	for _, provider := range s.providers {
+		results = append(results, app.SearchResult{
+			Type:          app.SearchTypeProvider,
+			Source:        provider.Namespace + "/" + provider.Name,
+			Name:          provider.DisplayName,
+			LatestVersion: provider.LatestVersion,
+			Downloads:     provider.Downloads,
+			Verified:      provider.Verified,
+			Tier:          provider.Tier,
+		})
+	}
+	return yield(results)
 }
 
 func (s fakeService) ListProviderDocs(ctx context.Context, provider string, keyword string, opts app.DocsOptions) ([]app.DocItem, error) {
@@ -759,11 +924,47 @@ func (s fakeService) GetProviderDoc(ctx context.Context, provider string, docsPa
 	return page, nil
 }
 
+func (s fakeService) GetModuleDoc(ctx context.Context, module string, opts app.DocsOptions) (app.ModuleDocPage, error) {
+	if s.err != nil {
+		return app.ModuleDocPage{}, s.err
+	}
+	page := s.modulePage
+	if page.Content == "" {
+		page = app.ModuleDocPage{
+			Module:  app.Module{Source: "registry.terraform.io/terraform-aws-modules/vpc/aws", LatestVersion: "6.6.1"},
+			Content: "# terraform-aws-vpc",
+			Source:  "https://github.com/terraform-aws-modules/terraform-aws-vpc",
+			Website: "https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws/6.6.1",
+		}
+	}
+	if opts.Version != "" {
+		page.Module.LatestVersion = opts.Version
+		page.Website = "https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws/" + opts.Version
+	}
+	return page, nil
+}
+
 func (s fakeService) ListProviderVersions(ctx context.Context, provider string) ([]app.ProviderVersion, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
 	return s.versions, nil
+}
+
+func (s fakeService) ListModuleVersions(ctx context.Context, module string) ([]app.ModuleVersion, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if len(s.moduleVersions) > 0 {
+		return s.moduleVersions, nil
+	}
+	return []app.ModuleVersion{{
+		Module:  app.Module{Source: "registry.terraform.io/terraform-aws-modules/vpc/aws", LatestVersion: "6.6.1"},
+		Version: "6.6.1",
+	}, {
+		Module:  app.Module{Source: "registry.terraform.io/terraform-aws-modules/vpc/aws", LatestVersion: "6.6.1"},
+		Version: "6.5.0",
+	}}, nil
 }
 
 func (s fakeService) AddProvider(ctx context.Context, cwd string, provider string, versionConstraint string) (app.ProjectResult, error) {

@@ -23,6 +23,37 @@ type Provider struct {
 	Tier          string
 }
 
+type SearchType string
+
+const (
+	SearchTypeProvider SearchType = "provider"
+	SearchTypeModule   SearchType = "module"
+	SearchTypeAll      SearchType = "all"
+)
+
+type SearchResult struct {
+	Type          SearchType
+	Source        string
+	RepositoryURL string
+	Name          string
+	LatestVersion string
+	Downloads     int64
+	Verified      bool
+	Tier          string
+}
+
+type Module struct {
+	Source        string
+	RepositoryURL string
+	Namespace     string
+	Name          string
+	Provider      string
+	LatestVersion string
+	Downloads     int64
+	Verified      bool
+	PublishedAt   string
+}
+
 type ProjectResult struct {
 	Provider          Provider
 	VersionConstraint string
@@ -48,8 +79,21 @@ type DocPage struct {
 	Website  string
 }
 
+type ModuleDocPage struct {
+	Module  Module
+	Content string
+	Source  string
+	Website string
+}
+
 type ProviderVersion struct {
 	Provider    Provider
+	Version     string
+	PublishedAt string
+}
+
+type ModuleVersion struct {
+	Module      Module
 	Version     string
 	PublishedAt string
 }
@@ -81,6 +125,13 @@ type ProviderDocs interface {
 	ListProviderVersions(context.Context, Provider) ([]ProviderVersion, error)
 }
 
+type ModuleRegistry interface {
+	SearchModules(context.Context, string) ([]Module, error)
+	StreamSearchModules(context.Context, string, func([]Module) error) error
+	GetModuleDoc(context.Context, string, string) (ModuleDocPage, error)
+	ListModuleVersions(context.Context, string) ([]ModuleVersion, error)
+}
+
 type ProjectEditor interface {
 	AddProvider(cwd string, providerInput string, opts AddProviderOptions) (ProjectResult, error)
 	UpdateProvider(cwd string, providerInput string, opts UpdateProviderOptions) (ProjectResult, error)
@@ -90,11 +141,13 @@ type ProjectEditor interface {
 type Service struct {
 	resolver ProviderResolver
 	docs     ProviderDocs
+	modules  ModuleRegistry
 	editor   ProjectEditor
 }
 
 func NewService(resolver ProviderResolver, docs ProviderDocs, editor ProjectEditor) Service {
-	return Service{resolver: resolver, docs: docs, editor: editor}
+	modules, _ := docs.(ModuleRegistry)
+	return Service{resolver: resolver, docs: docs, modules: modules, editor: editor}
 }
 
 func NewDefaultService() Service {
@@ -108,6 +161,36 @@ func (s Service) SearchProviders(ctx context.Context, query string) ([]Provider,
 
 func (s Service) StreamSearchProviders(ctx context.Context, query string, yield func([]Provider) error) error {
 	return s.resolver.StreamSearchProviders(ctx, query, yield)
+}
+
+func (s Service) StreamSearch(ctx context.Context, query string, searchType SearchType, yield func([]SearchResult) error) error {
+	switch searchType {
+	case SearchTypeProvider:
+		return s.resolver.StreamSearchProviders(ctx, query, func(providers []Provider) error {
+			return yield(providerSearchResults(providers))
+		})
+	case SearchTypeModule:
+		if s.modules == nil {
+			return fmt.Errorf("module registry is not configured")
+		}
+		return s.modules.StreamSearchModules(ctx, query, func(modules []Module) error {
+			return yield(moduleSearchResults(modules))
+		})
+	case SearchTypeAll:
+		if err := s.resolver.StreamSearchProviders(ctx, query, func(providers []Provider) error {
+			return yield(providerSearchResults(providers))
+		}); err != nil {
+			return err
+		}
+		if s.modules == nil {
+			return fmt.Errorf("module registry is not configured")
+		}
+		return s.modules.StreamSearchModules(ctx, query, func(modules []Module) error {
+			return yield(moduleSearchResults(modules))
+		})
+	default:
+		return fmt.Errorf("unknown search type %q", searchType)
+	}
 }
 
 func (s Service) ListProviderDocs(ctx context.Context, providerInput string, keyword string, opts DocsOptions) ([]DocItem, error) {
@@ -183,6 +266,17 @@ func (s Service) GetProviderDoc(ctx context.Context, providerInput string, docsP
 	return s.docs.GetProviderDoc(ctx, provider, kind, name)
 }
 
+func (s Service) GetModuleDoc(ctx context.Context, moduleInput string, opts DocsOptions) (ModuleDocPage, error) {
+	if s.modules == nil {
+		return ModuleDocPage{}, fmt.Errorf("module registry is not configured")
+	}
+	version := ""
+	if strings.TrimSpace(opts.Version) != "" {
+		version = strings.TrimSpace(opts.Version)
+	}
+	return s.modules.GetModuleDoc(ctx, moduleInput, version)
+}
+
 func (s Service) ListProviderVersions(ctx context.Context, providerInput string) ([]ProviderVersion, error) {
 	provider, err := s.resolver.ResolveProvider(ctx, providerInput)
 	if err != nil {
@@ -198,6 +292,13 @@ func (s Service) ListProviderVersions(ctx context.Context, providerInput string)
 		versions[i].Provider = provider
 	}
 	return versions, nil
+}
+
+func (s Service) ListModuleVersions(ctx context.Context, moduleInput string) ([]ModuleVersion, error) {
+	if s.modules == nil {
+		return nil, fmt.Errorf("module registry is not configured")
+	}
+	return s.modules.ListModuleVersions(ctx, moduleInput)
 }
 
 func (s Service) AddProvider(ctx context.Context, cwd string, providerInput string, versionConstraint string) (ProjectResult, error) {
@@ -337,6 +438,39 @@ func docItemMatches(item DocItem, keyword string) bool {
 	return false
 }
 
+func providerSearchResults(providers []Provider) []SearchResult {
+	out := make([]SearchResult, 0, len(providers))
+	for _, provider := range providers {
+		out = append(out, SearchResult{
+			Type:          SearchTypeProvider,
+			Source:        provider.Namespace + "/" + provider.Name,
+			RepositoryURL: provider.RepositoryURL,
+			Name:          provider.DisplayName,
+			LatestVersion: provider.LatestVersion,
+			Downloads:     provider.Downloads,
+			Verified:      provider.Verified,
+			Tier:          provider.Tier,
+		})
+	}
+	return out
+}
+
+func moduleSearchResults(modules []Module) []SearchResult {
+	out := make([]SearchResult, 0, len(modules))
+	for _, module := range modules {
+		out = append(out, SearchResult{
+			Type:          SearchTypeModule,
+			Source:        strings.TrimPrefix(module.Source, "registry.terraform.io/"),
+			RepositoryURL: module.RepositoryURL,
+			Name:          module.Name,
+			LatestVersion: module.LatestVersion,
+			Downloads:     module.Downloads,
+			Verified:      module.Verified,
+		})
+	}
+	return out
+}
+
 type registryAdapter struct {
 	client registry.Client
 }
@@ -419,6 +553,57 @@ func (r registryAdapter) ListProviderVersions(ctx context.Context, provider Prov
 	return out, nil
 }
 
+func (r registryAdapter) SearchModules(ctx context.Context, query string) ([]Module, error) {
+	modules, err := r.client.SearchModules(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Module, 0, len(modules))
+	for _, module := range modules {
+		out = append(out, appModule(module))
+	}
+	return out, nil
+}
+
+func (r registryAdapter) StreamSearchModules(ctx context.Context, query string, yield func([]Module) error) error {
+	return r.client.StreamSearchModules(ctx, query, func(modules []registry.Module) error {
+		out := make([]Module, 0, len(modules))
+		for _, module := range modules {
+			out = append(out, appModule(module))
+		}
+		return yield(out)
+	})
+}
+
+func (r registryAdapter) GetModuleDoc(ctx context.Context, moduleInput string, version string) (ModuleDocPage, error) {
+	page, err := r.client.GetModuleDoc(ctx, moduleInput, version)
+	if err != nil {
+		return ModuleDocPage{}, err
+	}
+	return ModuleDocPage{
+		Module:  appModule(page.Module),
+		Content: page.Content,
+		Source:  page.Source,
+		Website: page.Website,
+	}, nil
+}
+
+func (r registryAdapter) ListModuleVersions(ctx context.Context, moduleInput string) ([]ModuleVersion, error) {
+	versions, err := r.client.ListModuleVersions(ctx, moduleInput)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ModuleVersion, 0, len(versions))
+	for _, version := range versions {
+		out = append(out, ModuleVersion{
+			Module:      appModule(version.Module),
+			Version:     version.Version,
+			PublishedAt: version.PublishedAt,
+		})
+	}
+	return out, nil
+}
+
 type projectEditor struct{}
 
 func (projectEditor) AddProvider(cwd string, providerInput string, opts AddProviderOptions) (ProjectResult, error) {
@@ -470,6 +655,20 @@ func registryProvider(provider Provider) registry.Provider {
 		Downloads:     provider.Downloads,
 		Verified:      provider.Verified,
 		Tier:          provider.Tier,
+	}
+}
+
+func appModule(module registry.Module) Module {
+	return Module{
+		Source:        module.Source,
+		RepositoryURL: module.RepositoryURL,
+		Namespace:     module.Namespace,
+		Name:          module.Name,
+		Provider:      module.Provider,
+		LatestVersion: module.LatestVersion,
+		Downloads:     module.Downloads,
+		Verified:      module.Verified,
+		PublishedAt:   module.PublishedAt,
 	}
 }
 

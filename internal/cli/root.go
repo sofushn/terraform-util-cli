@@ -21,10 +21,13 @@ type options struct {
 type service interface {
 	SearchProviders(context.Context, string) ([]app.Provider, error)
 	StreamSearchProviders(context.Context, string, func([]app.Provider) error) error
+	StreamSearch(context.Context, string, app.SearchType, func([]app.SearchResult) error) error
 	ListProviderDocs(context.Context, string, string, app.DocsOptions) ([]app.DocItem, error)
 	StreamProviderDocs(context.Context, string, string, app.DocsOptions, func([]app.DocItem) error) error
 	GetProviderDoc(context.Context, string, string, app.DocsOptions) (app.DocPage, error)
+	GetModuleDoc(context.Context, string, app.DocsOptions) (app.ModuleDocPage, error)
 	ListProviderVersions(context.Context, string) ([]app.ProviderVersion, error)
+	ListModuleVersions(context.Context, string) ([]app.ModuleVersion, error)
 	AddProvider(context.Context, string, string, string) (app.ProjectResult, error)
 	UpdateProvider(context.Context, string, string, string) (app.ProjectResult, error)
 	RemoveProvider(context.Context, string, string) (app.ProjectResult, error)
@@ -99,43 +102,70 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer) error {
 }
 
 func newSearchCommand(opts *options, svc service) *cobra.Command {
-	return &cobra.Command{
-		Use:     "search <provider>",
-		Short:   "Search providers",
+	var typeFlag string
+	var moduleOnly bool
+	var providerOnly bool
+
+	cmd := &cobra.Command{
+		Use:     "search <query>",
+		Short:   "Search providers and modules",
 		GroupID: "registry",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			searchType, err := selectedSearchType(typeFlag, providerOnly, moduleOnly)
+			if err != nil {
+				return err
+			}
+			if strings.Join(strings.Fields(args[0]), " ") != args[0] || strings.Contains(args[0], " ") {
+				return fmt.Errorf("search query must be a single token")
+			}
 			if opts.quiet {
 				return nil
 			}
 
 			printed := false
-			err := svc.StreamSearchProviders(cmd.Context(), args[0], func(providers []app.Provider) error {
+			err = svc.StreamSearch(cmd.Context(), args[0], searchType, func(results []app.SearchResult) error {
 				if !printed {
-					printProviderSearchHeader(cmd.OutOrStdout(), opts.details)
+					printSearchHeader(cmd.OutOrStdout(), opts.details, searchType == app.SearchTypeAll)
 					printed = true
 				}
-				printProviderSearchRows(cmd.OutOrStdout(), providers, opts.details)
+				printSearchRows(cmd.OutOrStdout(), results, opts.details, searchType == app.SearchTypeAll)
 				return nil
 			})
 			if err != nil {
 				return err
 			}
 			if !printed {
-				fmt.Fprintf(cmd.OutOrStdout(), "No providers found for %q\n", args[0])
+				fmt.Fprintf(cmd.OutOrStdout(), "No registry results found for %q\n", args[0])
 			}
 			return nil
 		},
 	}
+	cmd.Flags().StringVarP(&typeFlag, "type", "t", string(app.SearchTypeProvider), "registry result type: provider, module, or all")
+	cmd.Flags().BoolVarP(&providerOnly, "provider", "p", false, "search providers only")
+	cmd.Flags().BoolVarP(&moduleOnly, "module", "m", false, "search modules only")
+	return cmd
 }
 
 func newVersionsCommand(opts *options, svc service) *cobra.Command {
 	return &cobra.Command{
-		Use:     "versions <provider>",
-		Short:   "List provider versions",
+		Use:     "versions <provider|module>",
+		Short:   "List provider or module versions",
 		GroupID: "registry",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if isModuleAddress(args[0]) {
+				versions, err := svc.ListModuleVersions(cmd.Context(), args[0])
+				if err != nil {
+					return err
+				}
+				if opts.quiet {
+					return nil
+				}
+				printModuleVersions(cmd.OutOrStdout(), versions, opts.details)
+				return nil
+			}
+
 			versions, err := svc.ListProviderVersions(cmd.Context(), args[0])
 			if err != nil {
 				return err
@@ -246,15 +276,38 @@ func newDocsCommand(opts *options, svc service) *cobra.Command {
 	docsOpts := &docsFlags{}
 
 	cmd := &cobra.Command{
-		Use:     "docs <provider> <data/name|resource/name|function/name>",
-		Short:   "List or fetch provider docs",
+		Use:     "docs <provider> <data/name|resource/name|function/name>|<module>",
+		Short:   "List or fetch provider and module docs",
 		GroupID: "registry",
-		Args:    validateDocsPathArgs,
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			appDocsOpts, err := appDocsOptions(*docsOpts)
 			if err != nil {
 				return err
 			}
+
+			if len(args) == 1 {
+				if !isModuleAddress(args[0]) {
+					return fmt.Errorf("provider docs require a docs path: data/name, resource/name, or function/name")
+				}
+				page, err := svc.GetModuleDoc(cmd.Context(), args[0], appDocsOpts)
+				if err != nil {
+					return err
+				}
+				if opts.quiet {
+					return nil
+				}
+				printModuleDocPage(cmd.OutOrStdout(), page, opts.details)
+				return nil
+			}
+
+			if isModuleAddress(args[0]) {
+				return fmt.Errorf("module docs do not accept provider docs paths")
+			}
+			if !isDocsPath(args[1]) {
+				return fmt.Errorf("docs path must start with data/, resource/, or function/")
+			}
+
 			appDocsOpts.CWD = currentWorkingDirectory()
 			page, err := svc.GetProviderDoc(cmd.Context(), args[0], args[1], appDocsOpts)
 			if err != nil {
@@ -269,8 +322,8 @@ func newDocsCommand(opts *options, svc service) *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringVarP(&docsOpts.version, "version", "v", "", "provider version for docs")
-	cmd.PersistentFlags().BoolVar(&docsOpts.latest, "latest", false, "use latest provider version for docs")
+	cmd.PersistentFlags().StringVarP(&docsOpts.version, "version", "v", "", "provider or module version for docs")
+	cmd.PersistentFlags().BoolVar(&docsOpts.latest, "latest", false, "use latest provider or module version for docs")
 	cmd.AddCommand(newDocsListCommand(opts, docsOpts, svc))
 
 	return cmd
@@ -338,6 +391,37 @@ func validateDocsPathArgs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func selectedSearchType(typeFlag string, providerOnly bool, moduleOnly bool) (app.SearchType, error) {
+	if providerOnly && moduleOnly {
+		return "", fmt.Errorf("--provider and --module cannot be used together")
+	}
+	normalized := app.SearchType(strings.ToLower(strings.TrimSpace(typeFlag)))
+	switch normalized {
+	case app.SearchTypeProvider, app.SearchTypeModule, app.SearchTypeAll:
+	default:
+		return "", fmt.Errorf("--type must be provider, module, or all")
+	}
+	if providerOnly && normalized != app.SearchTypeProvider {
+		return "", fmt.Errorf("--provider cannot be used with --type %s", normalized)
+	}
+	if moduleOnly && normalized != app.SearchTypeProvider && normalized != app.SearchTypeModule {
+		return "", fmt.Errorf("--module cannot be used with --type %s", normalized)
+	}
+	if providerOnly {
+		return app.SearchTypeProvider, nil
+	}
+	if moduleOnly {
+		return app.SearchTypeModule, nil
+	}
+	return normalized, nil
+}
+
+func isModuleAddress(input string) bool {
+	source := strings.TrimPrefix(strings.TrimSpace(input), "registry.terraform.io/")
+	parts := strings.Split(source, "/")
+	return len(parts) == 3 && parts[0] != "" && parts[1] != "" && parts[2] != ""
+}
+
 func isDocsPath(path string) bool {
 	for _, prefix := range []string{"data/", "resource/", "function/"} {
 		if strings.HasPrefix(path, prefix) && len(path) > len(prefix) {
@@ -383,11 +467,47 @@ func printDocPage(w io.Writer, page app.DocPage, details bool) {
 	fmt.Fprintln(w, page.Content)
 }
 
+func printModuleDocPage(w io.Writer, page app.ModuleDocPage, details bool) {
+	if details {
+		fmt.Fprintln(w, "Type: module")
+		printModuleMetadata(w, page.Module, page.Website)
+		if page.Source != "" {
+			fmt.Fprintf(w, "Source: %s\n", page.Source)
+		}
+		fmt.Fprintln(w)
+	}
+
+	fmt.Fprintln(w, page.Content)
+}
+
 func printProviderVersions(w io.Writer, versions []app.ProviderVersion, details bool) {
 	if details && len(versions) > 0 {
 		provider := versions[0].Provider
 		fmt.Fprintf(w, "provider: %s\n", provider.Source)
 		fmt.Fprintf(w, "website: %s\n\n", providerWebsiteURLWithoutVersion(provider))
+		printVersionsRow(w, []int{len("version"), len("published")}, []string{"version", "published"})
+		for _, version := range versions {
+			printVersionsRow(w, []int{len("version"), len("published")}, []string{version.Version, publishedDate(version.PublishedAt)})
+		}
+		return
+	}
+
+	fmt.Fprintln(w, "version")
+	for _, version := range versions {
+		fmt.Fprintln(w, version.Version)
+	}
+}
+
+func printModuleVersions(w io.Writer, versions []app.ModuleVersion, details bool) {
+	if details && len(versions) > 0 {
+		module := versions[0].Module
+		fmt.Fprintln(w, "type: module")
+		fmt.Fprintf(w, "module: %s\n", module.Source)
+		fmt.Fprintf(w, "website: %s\n", moduleWebsiteURLWithoutVersion(module))
+		if module.RepositoryURL != "" {
+			fmt.Fprintf(w, "source: %s\n", module.RepositoryURL)
+		}
+		fmt.Fprintln(w)
 		printVersionsRow(w, []int{len("version"), len("published")}, []string{"version", "published"})
 		for _, version := range versions {
 			printVersionsRow(w, []int{len("version"), len("published")}, []string{version.Version, publishedDate(version.PublishedAt)})
@@ -429,6 +549,17 @@ func printProviderMetadata(w io.Writer, provider app.Provider, website string) {
 	}
 }
 
+func printModuleMetadata(w io.Writer, module app.Module, website string) {
+	fmt.Fprintf(w, "Module: %s\n", module.Source)
+	fmt.Fprintf(w, "Version: %s\n", module.LatestVersion)
+	if website == "" {
+		website = moduleWebsiteURL(module)
+	}
+	if website != "" {
+		fmt.Fprintf(w, "Website: %s\n", website)
+	}
+}
+
 func providerWebsiteURL(provider app.Provider) string {
 	source := strings.TrimPrefix(provider.Source, "registry.terraform.io/")
 	parts := strings.Split(source, "/")
@@ -462,49 +593,115 @@ func providerDocsWebsiteURL(provider app.Provider) string {
 	return website + "/docs"
 }
 
+func moduleWebsiteURL(module app.Module) string {
+	source := strings.TrimPrefix(module.Source, "registry.terraform.io/")
+	parts := strings.Split(source, "/")
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return ""
+	}
+
+	version := module.LatestVersion
+	if strings.TrimSpace(version) == "" {
+		version = "latest"
+	}
+
+	return fmt.Sprintf("https://registry.terraform.io/modules/%s/%s/%s/%s", parts[0], parts[1], parts[2], version)
+}
+
+func moduleWebsiteURLWithoutVersion(module app.Module) string {
+	source := strings.TrimPrefix(module.Source, "registry.terraform.io/")
+	parts := strings.Split(source, "/")
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("https://registry.terraform.io/modules/%s/%s/%s", parts[0], parts[1], parts[2])
+}
+
 func printProviderSearchResults(w io.Writer, providers []app.Provider, details bool) {
 	printProviderSearchHeader(w, details)
 	printProviderSearchRows(w, providers, details)
 }
 
-func printProviderSearchHeader(w io.Writer, details bool) {
-	printSearchRow(w, searchColumnWidths(), details, []string{"provider", "name", "version", "downloads", "tier", "verified"})
+func printSearchHeader(w io.Writer, details bool, includeType bool) {
+	values := []string{"source", "name", "version", "downloads", "tier", "verified"}
+	if includeType {
+		values = append([]string{"type"}, values...)
+	}
+	printGenericSearchRow(w, searchColumnWidths(includeType), details, includeType, values)
 }
 
-func printProviderSearchRows(w io.Writer, providers []app.Provider, details bool) {
-	widths := searchColumnWidths()
-	for _, provider := range providers {
+func printSearchRows(w io.Writer, results []app.SearchResult, details bool, includeType bool) {
+	widths := searchColumnWidths(includeType)
+	for _, result := range results {
 		verified := ""
-		if provider.Verified {
+		if result.Verified {
 			verified = "true"
 		}
 
 		downloads := ""
 		if details {
-			downloads = fmt.Sprintf("%d", provider.Downloads)
+			downloads = fmt.Sprintf("%d", result.Downloads)
 		}
 
-		printSearchRow(w, widths, details, []string{
-			provider.Namespace + "/" + provider.Name,
-			provider.DisplayName,
-			provider.LatestVersion,
+		values := []string{
+			result.Source,
+			result.Name,
+			result.LatestVersion,
 			downloads,
-			provider.Tier,
+			result.Tier,
 			verified,
-		})
+		}
+		if includeType {
+			values = append([]string{string(result.Type)}, values...)
+		}
+		printGenericSearchRow(w, widths, details, includeType, values)
 	}
 }
 
-func searchColumnWidths() []int {
-	return []int{32, 8, 42, 12, 10, len("verified")}
+func printProviderSearchHeader(w io.Writer, details bool) {
+	printSearchHeader(w, details, false)
 }
 
-func printSearchRow(w io.Writer, widths []int, details bool, values []string) {
+func printProviderSearchRows(w io.Writer, providers []app.Provider, details bool) {
+	printSearchRows(w, appProviderSearchResults(providers), details, false)
+}
+
+func appProviderSearchResults(providers []app.Provider) []app.SearchResult {
+	results := make([]app.SearchResult, 0, len(providers))
+	for _, provider := range providers {
+		results = append(results, app.SearchResult{
+			Type:          app.SearchTypeProvider,
+			Source:        provider.Namespace + "/" + provider.Name,
+			Name:          provider.DisplayName,
+			LatestVersion: provider.LatestVersion,
+			Downloads:     provider.Downloads,
+			Verified:      provider.Verified,
+			Tier:          provider.Tier,
+		})
+	}
+	return results
+}
+
+func searchColumnWidths(includeType bool) []int {
+	widths := []int{36, 10, 42, 12, 10, len("verified")}
+	if includeType {
+		return append([]int{len("provider")}, widths...)
+	}
+	return widths
+}
+
+func printGenericSearchRow(w io.Writer, widths []int, details bool, includeType bool, values []string) {
 	row := values
 	rowWidths := widths
 	if !details {
-		row = []string{values[0], values[1], values[2], values[5]}
-		rowWidths = []int{widths[0], widths[1], widths[2], widths[5]}
+		if includeType {
+			row = []string{values[0], values[1], values[2], values[3], values[6]}
+			rowWidths = []int{widths[0], widths[1], widths[2], widths[3], widths[6]}
+		} else {
+			row = []string{values[0], values[1], values[2], values[5]}
+			rowWidths = []int{widths[0], widths[1], widths[2], widths[5]}
+		}
 	}
 
 	for i := 0; i < len(row); i++ {

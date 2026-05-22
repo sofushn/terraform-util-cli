@@ -222,6 +222,114 @@ func TestResolveProviderNamespacedUsesExactProvider(t *testing.T) {
 	}
 }
 
+func TestStreamSearchModulesYieldsPages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/modules/search":
+			switch r.URL.Query().Get("offset") {
+			case "0":
+				w.Write([]byte(`{
+					"meta": {"next_offset": 100, "next_url": "/v1/modules/search?q=vpc&offset=100&limit=100"},
+					"modules": [
+						{"namespace":"terraform-aws-modules","name":"vpc","provider":"aws","version":"6.6.1","description":"VPC","source":"https://github.com/terraform-aws-modules/terraform-aws-vpc","downloads":20,"verified":false}
+					]
+				}`))
+			case "100":
+				w.Write([]byte(`{
+					"meta": {},
+					"modules": [
+						{"namespace":"aws-ia","name":"vpc","provider":"aws","version":"4.7.3","description":"VPC","source":"https://github.com/aws-ia/terraform-aws-vpc","downloads":30,"verified":true}
+					]
+				}`))
+			default:
+				t.Fatalf("unexpected offset: %s", r.URL.Query().Get("offset"))
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClientForBaseURL(server.URL)
+	var pages [][]Module
+	err := client.StreamSearchModules(context.Background(), "vpc", func(modules []Module) error {
+		pages = append(pages, modules)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("stream search modules: %v", err)
+	}
+	if len(pages) != 2 || pages[0][0].Source != "registry.terraform.io/terraform-aws-modules/vpc/aws" || !pages[1][0].Verified {
+		t.Fatalf("unexpected pages: %#v", pages)
+	}
+}
+
+func TestGetModuleDocFetchesVersionedReadme(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/modules/terraform-aws-modules/vpc/aws/6.6.1" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Write([]byte(`{
+			"namespace":"terraform-aws-modules",
+			"name":"vpc",
+			"provider":"aws",
+			"version":"6.6.1",
+			"description":"VPC",
+			"source":"https://github.com/terraform-aws-modules/terraform-aws-vpc",
+			"downloads":20,
+			"verified":false,
+			"published_at":"2026-04-02T20:22:11Z",
+			"root":{"readme":"# AWS VPC Terraform module"}
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClientForBaseURL(server.URL)
+	page, err := client.GetModuleDoc(context.Background(), "registry.terraform.io/terraform-aws-modules/vpc/aws", "6.6.1")
+	if err != nil {
+		t.Fatalf("get module doc: %v", err)
+	}
+	if page.Module.Source != "registry.terraform.io/terraform-aws-modules/vpc/aws" || page.Content != "# AWS VPC Terraform module" {
+		t.Fatalf("unexpected module page: %#v", page)
+	}
+	if page.Website != "https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws/6.6.1" {
+		t.Fatalf("unexpected website: %s", page.Website)
+	}
+}
+
+func TestListModuleVersionsSortsNewestFirst(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/modules/terraform-aws-modules/vpc/aws/versions":
+			w.Write([]byte(`{"modules":[{"versions":[{"version":"1.0.0"},{"version":"6.6.1"},{"version":"6.5.0"}]}]}`))
+		case "/v1/modules/terraform-aws-modules/vpc/aws":
+			w.Write([]byte(`{
+				"namespace":"terraform-aws-modules",
+				"name":"vpc",
+				"provider":"aws",
+				"version":"6.6.1",
+				"source":"https://github.com/terraform-aws-modules/terraform-aws-vpc",
+				"root":{"readme":""}
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClientForBaseURL(server.URL)
+	versions, err := client.ListModuleVersions(context.Background(), "terraform-aws-modules/vpc/aws")
+	if err != nil {
+		t.Fatalf("list module versions: %v", err)
+	}
+	if got := fmt.Sprintf("%s,%s,%s", versions[0].Version, versions[1].Version, versions[2].Version); got != "6.6.1,6.5.0,1.0.0" {
+		t.Fatalf("unexpected version order: %s", got)
+	}
+	if versions[0].Module.Source != "registry.terraform.io/terraform-aws-modules/vpc/aws" {
+		t.Fatalf("unexpected module on versions: %#v", versions[0].Module)
+	}
+}
+
 func TestListProviderDocsReturnsSupportedDocs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
