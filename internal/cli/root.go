@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"terraform-util/internal/app"
+	"github.com/sofushn/terraform-util-cli/internal/app"
 
 	"github.com/spf13/cobra"
 )

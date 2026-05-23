@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"terraform-util/internal/project"
+	"github.com/sofushn/terraform-util-cli/internal/project"
 
 	goversion "github.com/hashicorp/go-version"
 )

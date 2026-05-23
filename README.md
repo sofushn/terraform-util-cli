@@ -6,6 +6,26 @@ CLI for Terraform Registry documentation and provider helpers.
 
 - Go 1.22 or newer
 
+## Install
+
+Install the latest released version into your Go bin directory:
+
+```sh
+go install github.com/sofushn/terraform-util-cli/cmd/terraform-util@latest
+```
+
+Install a specific version:
+
+```sh
+go install github.com/sofushn/terraform-util-cli/cmd/terraform-util@v0.2.0
+```
+
+Make sure your Go bin directory is on your `PATH`, then run:
+
+```sh
+terraform-util --help
+```
+
 ## Build
 
 From the repository root:
@@ -39,16 +59,10 @@ Run the built CLI:
 go test ./...
 ```
 
-## Install Locally
+## Install Local Checkout
 
-To install the binary into your Go bin directory:
+To install the current checkout into your Go bin directory while developing:
 
 ```sh
 go install ./cmd/terraform-util
-```
-
-Make sure your Go bin directory is on your `PATH`, then run:
-
-```sh
-terraform-util --help
 ```

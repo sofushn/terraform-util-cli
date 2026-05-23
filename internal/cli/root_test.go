@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"terraform-util/internal/app"
+	"github.com/sofushn/terraform-util-cli/internal/app"
 )
 
 var errFakeService = errors.New("service failed")

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"terraform-util/internal/address"
+	"github.com/sofushn/terraform-util-cli/internal/address"
 
 	"golang.org/x/mod/semver"
 )

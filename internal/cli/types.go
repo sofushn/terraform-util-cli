@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 
-	"terraform-util/internal/app"
+	"github.com/sofushn/terraform-util-cli/internal/app"
 )
 
 type options struct {

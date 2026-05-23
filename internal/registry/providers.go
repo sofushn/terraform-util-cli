@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"terraform-util/internal/address"
+	"github.com/sofushn/terraform-util-cli/internal/address"
 )
 
 type Provider struct {

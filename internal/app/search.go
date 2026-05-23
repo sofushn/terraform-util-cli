@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"terraform-util/internal/address"
+	"github.com/sofushn/terraform-util-cli/internal/address"
 )
 
 func (s Service) SearchProviders(ctx context.Context, query string) ([]Provider, error) {

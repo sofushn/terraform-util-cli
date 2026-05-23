@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"terraform-util/internal/address"
+	"github.com/sofushn/terraform-util-cli/internal/address"
 
 	"github.com/hashicorp/hcl/v2/hclparse"
 	"github.com/hashicorp/hcl/v2/hclsyntax"

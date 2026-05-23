@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"terraform-util/internal/project"
-	"terraform-util/internal/registry"
+	"github.com/sofushn/terraform-util-cli/internal/project"
+	"github.com/sofushn/terraform-util-cli/internal/registry"
 )
 
 type registryAdapter struct {

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"terraform-util/internal/address"
-	"terraform-util/internal/app"
+	"github.com/sofushn/terraform-util-cli/internal/address"
+	"github.com/sofushn/terraform-util-cli/internal/app"
 )
 
 func printDocList(w io.Writer, items []app.DocItem, details bool) {

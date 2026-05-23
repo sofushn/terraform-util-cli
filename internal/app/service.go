@@ -1,6 +1,6 @@
 package app
 
-import "terraform-util/internal/registry"
+import "github.com/sofushn/terraform-util-cli/internal/registry"
 
 type Service struct {
 	resolver ProviderResolver
