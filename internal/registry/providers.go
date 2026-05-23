@@ -2,22 +2,15 @@ package registry
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 	"sync"
-	"time"
+
+	"terraform-util/internal/address"
 )
-
-const officialRegistryURL = "https://registry.terraform.io"
-
-type Client struct {
-	BaseURL    string
-	HTTPClient *http.Client
-}
 
 type Provider struct {
 	Source        string
@@ -30,19 +23,6 @@ type Provider struct {
 	Downloads     int64
 	Verified      bool
 	Tier          string
-}
-
-func NewClient() Client {
-	return NewClientForBaseURL(officialRegistryURL)
-}
-
-func NewClientForBaseURL(baseURL string) Client {
-	return Client{
-		BaseURL: strings.TrimRight(baseURL, "/"),
-		HTTPClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-	}
 }
 
 func (c Client) SearchProviders(ctx context.Context, query string) ([]Provider, error) {
@@ -64,9 +44,7 @@ func (c Client) SearchProviders(ctx context.Context, query string) ([]Provider, 
 	}
 
 	sortProviders(providers, normalized)
-
 	c.hydrateProviderVersions(ctx, providers)
-
 	return providers, nil
 }
 
@@ -132,15 +110,12 @@ func (c Client) ResolveProvider(ctx context.Context, query string) (Provider, er
 }
 
 func (c Client) exactProvider(ctx context.Context, query string) (Provider, bool, error) {
-	parts := strings.Split(query, "/")
-	if len(parts) == 3 && parts[0] == "registry.terraform.io" {
-		parts = parts[1:]
-	}
-	if len(parts) != 2 {
+	parsed, err := address.ParseProvider(query)
+	if err != nil || strings.Count(address.TrimRegistryHost(query), "/") != 1 {
 		return Provider{}, false, nil
 	}
 
-	provider, err := c.getProvider(ctx, parts[0], parts[1])
+	provider, err := c.getProvider(ctx, parsed.Namespace, parsed.Name)
 	if err != nil {
 		if isNotFound(err) {
 			return Provider{}, false, nil
@@ -205,7 +180,7 @@ func (c Client) searchByNamePage(ctx context.Context, query string, pageNumber i
 	for _, item := range response.Data {
 		attrs := item.Attributes
 		providers = append(providers, Provider{
-			Source:        "registry.terraform.io/" + attrs.FullName,
+			Source:        address.ProviderSource(attrs.Namespace, attrs.Name),
 			RepositoryURL: attrs.Source,
 			Namespace:     attrs.Namespace,
 			Name:          attrs.Name,
@@ -233,7 +208,7 @@ func (c Client) getProvider(ctx context.Context, namespace string, name string) 
 	}
 
 	return Provider{
-		Source:        "registry.terraform.io/" + response.Namespace + "/" + response.Name,
+		Source:        address.ProviderSource(response.Namespace, response.Name),
 		RepositoryURL: response.Source,
 		Namespace:     response.Namespace,
 		Name:          response.Name,
@@ -271,28 +246,6 @@ func (c Client) hydrateProviderVersions(ctx context.Context, providers []Provide
 		}(i)
 	}
 	wg.Wait()
-}
-
-func (c Client) doJSON(req *http.Request, target any) error {
-	client := c.HTTPClient
-	if client == nil {
-		client = http.DefaultClient
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return notFoundError{url: req.URL.String()}
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("registry request failed: %s", resp.Status)
-	}
-
-	return json.NewDecoder(resp.Body).Decode(target)
 }
 
 func sortProviders(providers []Provider, query string) {
@@ -337,31 +290,6 @@ func isVerified(tier string) bool {
 	return tier == "official" || tier == "partner"
 }
 
-type pagination struct {
-	totalPages int
-	itemCount  int
-}
-
-func (p pagination) isLast(pageNumber int, pageSize int) bool {
-	if p.totalPages > 0 {
-		return pageNumber >= p.totalPages
-	}
-	return p.itemCount < pageSize
-}
-
-type notFoundError struct {
-	url string
-}
-
-func (e notFoundError) Error() string {
-	return "registry resource not found: " + e.url
-}
-
-func isNotFound(err error) bool {
-	_, ok := err.(notFoundError)
-	return ok
-}
-
 type v1ProviderResponse struct {
 	Namespace   string `json:"namespace"`
 	Name        string `json:"name"`
@@ -387,10 +315,4 @@ type v2ProvidersResponse struct {
 		} `json:"attributes"`
 	} `json:"data"`
 	Meta paginationMeta `json:"meta"`
-}
-
-type paginationMeta struct {
-	Pagination struct {
-		TotalPages int `json:"total-pages"`
-	} `json:"pagination"`
 }

@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"terraform-util/internal/address"
+
 	"golang.org/x/mod/semver"
 )
 
@@ -127,7 +129,7 @@ func (c Client) ListModuleVersions(ctx context.Context, moduleInput string) ([]M
 	}
 
 	module := Module{
-		Source:    "registry.terraform.io/" + namespace + "/" + name + "/" + provider,
+		Source:    address.ModuleSource(namespace, name, provider),
 		Namespace: namespace,
 		Name:      name,
 		Provider:  provider,
@@ -228,18 +230,16 @@ func (c Client) searchModulesPage(ctx context.Context, query string, offset int,
 }
 
 func parseModuleAddress(input string) (string, string, string, error) {
-	source := strings.TrimSpace(input)
-	source = strings.TrimPrefix(source, "registry.terraform.io/")
-	parts := strings.Split(source, "/")
-	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
-		return "", "", "", fmt.Errorf("module source must be namespace/name/provider")
+	module, err := address.ParseModule(input)
+	if err != nil {
+		return "", "", "", err
 	}
-	return parts[0], parts[1], parts[2], nil
+	return module.Namespace, module.Name, module.Provider, nil
 }
 
 func moduleFromSearch(item moduleSearchItem) Module {
 	return Module{
-		Source:        "registry.terraform.io/" + item.Namespace + "/" + item.Name + "/" + item.Provider,
+		Source:        address.ModuleSource(item.Namespace, item.Name, item.Provider),
 		RepositoryURL: item.Source,
 		Namespace:     item.Namespace,
 		Name:          item.Name,
@@ -254,7 +254,7 @@ func moduleFromSearch(item moduleSearchItem) Module {
 
 func moduleFromDetail(response moduleDetailResponse) Module {
 	return Module{
-		Source:        "registry.terraform.io/" + response.Namespace + "/" + response.Name + "/" + response.Provider,
+		Source:        address.ModuleSource(response.Namespace, response.Name, response.Provider),
 		RepositoryURL: response.Source,
 		Namespace:     response.Namespace,
 		Name:          response.Name,
@@ -283,7 +283,7 @@ func sortModules(modules []Module, query string) {
 
 func moduleScore(module Module, query string) int {
 	score := 0
-	shortSource := strings.TrimPrefix(module.Source, "registry.terraform.io/")
+	shortSource := address.TrimRegistryHost(module.Source)
 	if module.Name == query {
 		score += 1000
 	}
@@ -297,7 +297,7 @@ func moduleScore(module Module, query string) int {
 }
 
 func moduleWebsiteURL(module Module) string {
-	source := strings.TrimPrefix(module.Source, "registry.terraform.io/")
+	source := address.TrimRegistryHost(module.Source)
 	parts := strings.Split(source, "/")
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
 		return ""
