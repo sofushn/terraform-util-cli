@@ -4,7 +4,7 @@ CLI for Terraform Registry documentation and provider helpers.
 
 ## Requirements
 
-- Go 1.22 or newer
+- Go 1.23 or newer
 
 ## Install
 
