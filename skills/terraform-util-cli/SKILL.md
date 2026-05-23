@@ -9,24 +9,6 @@ Use `terraform-util` to search the official Terraform Registry, fetch current pr
 
 The CLI is designed for agents: prefer it over relying on stale Terraform provider knowledge.
 
-## Prerequisites
-
-From this repository, build or install the CLI when it is not already on `PATH`:
-
-```sh
-go build -o terraform-util ./cmd/terraform-util
-./terraform-util --help
-```
-
-Or install it into the Go bin directory:
-
-```sh
-go install ./cmd/terraform-util
-terraform-util --help
-```
-
-If running from the repo without installing, use `./terraform-util`. Otherwise use `terraform-util`.
-
 ## Command Tree
 
 ```text
