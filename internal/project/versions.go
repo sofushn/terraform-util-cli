@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"terraform-util/internal/address"
+
 	"github.com/hashicorp/hcl/v2/hclparse"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
@@ -172,9 +174,7 @@ func stringAttributeValue(attr *hclsyntax.Attribute) (string, bool) {
 }
 
 func canonicalProviderSource(source string) string {
-	source = strings.TrimSpace(source)
-	source = strings.TrimPrefix(source, "registry.terraform.io/")
-	return source
+	return address.TrimRegistryHost(source)
 }
 
 func defaultProviderSource(localName string) string {

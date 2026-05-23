@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	"terraform-util/internal/address"
+
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclparse"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
@@ -156,28 +158,11 @@ func UpdateProvider(cwd string, providerInput string, opts UpdateOptions) (Resul
 }
 
 func ParseProvider(input string) (Provider, error) {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" {
-		return Provider{}, fmt.Errorf("provider is required")
+	provider, err := address.ParseProvider(input)
+	if err != nil {
+		return Provider{}, err
 	}
-
-	parts := strings.Split(trimmed, "/")
-	for _, part := range parts {
-		if part == "" {
-			return Provider{}, fmt.Errorf("invalid provider %q", input)
-		}
-	}
-
-	switch len(parts) {
-	case 1:
-		return Provider{LocalName: parts[0], Source: "hashicorp/" + parts[0]}, nil
-	case 2:
-		return Provider{LocalName: parts[1], Source: trimmed}, nil
-	case 3:
-		return Provider{LocalName: parts[2], Source: trimmed}, nil
-	default:
-		return Provider{}, fmt.Errorf("invalid provider %q", input)
-	}
+	return Provider{LocalName: provider.LocalName, Source: provider.Source}, nil
 }
 
 func loadFiles(cwd string) ([]*tfFile, error) {
