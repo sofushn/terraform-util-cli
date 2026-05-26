@@ -45,7 +45,7 @@ tracks planned follow-up work.
   - `--latest`
 - Docs version default checks `.terraform.lock.hcl`, then `required_providers`, then latest registry docs.
 - Non-exact `required_providers` constraints resolve to the newest matching registry version.
-- `docs list` loads all provider docs pages for resources, data sources, and functions, using registry pagination metadata when available.
+- `docs list` loads all supported provider docs pages for overview, guides, resources, data sources, ephemeral resources, actions, and functions, using registry pagination metadata when available.
 - `docs list` prints result pages progressively instead of waiting for every page to load.
 - Detailed docs output includes:
   - provider source

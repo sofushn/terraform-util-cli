@@ -38,7 +38,7 @@ terraform-util add <provider>
 terraform-util remove <provider>
 terraform-util update <provider>
 terraform-util docs list <provider> [keyword]
-terraform-util docs <provider> <data|resource|function>/<name>
+terraform-util docs <provider> <overview|guide|resource|data|ephemeral|action|function>/<name>
 ```
 
 ### Global Options
@@ -235,7 +235,7 @@ terraform-util update aws --version "~> 6.0"
 
 ### `docs list <provider> [keyword]`
 
-List available resources, data sources, and functions for a provider.
+List all supported provider documentation categories for a provider.
 
 Example:
 
@@ -248,8 +248,13 @@ terraform-util docs --latest list aws vpc
 Example output:
 
 ```text
+overview/provider
+guide/custom-service-endpoints
 resource/aws_vpc
 data/aws_vpc
+ephemeral/aws_ecr_authorization_token
+action/aws_cloudfront_create_invalidation
+function/arn_parse
 ```
 
 With `--details`, include provider metadata before the list:
@@ -263,7 +268,52 @@ resource/aws_vpc
 data/aws_vpc
 ```
 
-Keyword matching should search names, titles, and descriptions where available.
+`docs list` should return all supported categories by default in this order:
+
+1. `overview`
+2. `guide`
+3. `resource`
+4. `data`
+5. `ephemeral`
+6. `action`
+7. `function`
+
+Registry category mapping:
+
+```text
+overview              -> overview/<slug>
+guides                -> guide/<slug>
+resources             -> resource/<name>
+data-sources          -> data/<name>
+ephemeral-resources   -> ephemeral/<name>
+actions               -> action/<name>
+functions             -> function/<name>
+```
+
+Resource-like docs should be listed with provider-prefixed Terraform names:
+
+```text
+resource/aws_vpc
+data/aws_ami
+ephemeral/aws_ecr_authorization_token
+action/aws_cloudfront_create_invalidation
+```
+
+Guide and overview docs should keep Registry slugs without provider-prefix normalization:
+
+```text
+overview/provider
+guide/custom-service-endpoints
+```
+
+Keyword matching should search paths, names, titles, and descriptions where available. Since
+matching includes paths, kind-prefix filtering should work without an extra flag:
+
+```sh
+terraform-util docs list aws guide/
+terraform-util docs list aws ephemeral/
+terraform-util docs list aws action/
+```
 
 Docs version flags:
 
@@ -276,7 +326,7 @@ Docs version flags:
 - If no usable project version exists, the command falls back to latest registry docs.
 - `--version` and `--latest` are mutually exclusive.
 
-### `docs <provider> <data|resource|function>/<name>`
+### `docs <provider> <overview|guide|resource|data|ephemeral|action|function>/<name>`
 
 Fetch the documentation page for a specific item.
 
@@ -285,6 +335,10 @@ Examples:
 ```sh
 terraform-util docs aws resource/aws_vpc
 terraform-util docs hashicorp/aws data/aws_ami
+terraform-util docs aws overview/provider
+terraform-util docs aws guide/custom-service-endpoints
+terraform-util docs aws ephemeral/aws_ecr_authorization_token
+terraform-util docs aws action/aws_cloudfront_create_invalidation
 terraform-util docs --version 5.0.0 aws resource/aws_vpc
 terraform-util docs --latest aws resource/aws_vpc
 ```
@@ -296,6 +350,12 @@ Expected behavior:
 - Use `--latest` to explicitly fetch the latest registry docs.
 - Reject commands that provide both `--version` and `--latest`.
 - Fetch the matching documentation page.
+- Any path printed by `docs list` should be directly fetchable by copying it into this command.
+- For resource-like docs, accept both provider-prefixed Terraform names and raw Registry slugs:
+  - `resource/aws_vpc` and `resource/vpc`.
+  - `data/aws_ami` and `data/ami`.
+  - `ephemeral/aws_ecr_authorization_token` and `ephemeral/ecr_authorization_token`.
+  - `action/aws_cloudfront_create_invalidation` and `action/cloudfront_create_invalidation`.
 - Emit the documentation as plain text or Markdown-like text that is readable in a terminal.
 - Do not include provider metadata in default output.
 - Include provider metadata when `--details` is set.

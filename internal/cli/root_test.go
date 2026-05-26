@@ -31,12 +31,32 @@ func execute(args ...string) (string, string, error) {
 		},
 		docItems: []app.DocItem{{
 			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
+			Kind:     "overview",
+			Name:     "provider",
+		}, {
+			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
+			Kind:     "guide",
+			Name:     "custom-service-endpoints",
+		}, {
+			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
 			Kind:     "resource",
 			Name:     "aws_vpc",
 		}, {
 			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
 			Kind:     "data",
 			Name:     "aws_ami",
+		}, {
+			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
+			Kind:     "ephemeral",
+			Name:     "aws_ecr_authorization_token",
+		}, {
+			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
+			Kind:     "action",
+			Name:     "aws_cloudfront_create_invalidation",
+		}, {
+			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
+			Kind:     "function",
+			Name:     "arn_parse",
 		}},
 		docPage: app.DocPage{
 			Provider: app.Provider{Source: "registry.terraform.io/hashicorp/aws", LatestVersion: "6.46.0"},
@@ -515,12 +535,17 @@ func TestDocsListWithAndWithoutKeyword(t *testing.T) {
 		{
 			name: "without keyword",
 			args: []string{"docs", "list", "aws"},
-			want: "resource/aws_vpc\ndata/aws_ami\n",
+			want: "overview/provider\nguide/custom-service-endpoints\nresource/aws_vpc\ndata/aws_ami\nephemeral/aws_ecr_authorization_token\naction/aws_cloudfront_create_invalidation\nfunction/arn_parse\n",
 		},
 		{
 			name: "with keyword",
 			args: []string{"docs", "list", "aws", "vpc"},
 			want: "resource/aws_vpc\n",
+		},
+		{
+			name: "with kind prefix",
+			args: []string{"docs", "list", "aws", "guide/"},
+			want: "guide/custom-service-endpoints\n",
 		},
 	}
 
@@ -539,8 +564,12 @@ func TestDocsListWithAndWithoutKeyword(t *testing.T) {
 
 func TestDocsPathKindsParse(t *testing.T) {
 	tests := []string{
+		"overview/provider",
+		"guide/custom-service-endpoints",
 		"resource/aws_vpc",
 		"data/aws_ami",
+		"ephemeral/aws_ecr_authorization_token",
+		"action/aws_cloudfront_create_invalidation",
 		"function/templatestring",
 	}
 
@@ -668,7 +697,7 @@ func TestDocsHelpShowsListSubcommand(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"docs <provider> <data/name|resource/name|function/name>|<module>",
+		"docs <provider> <path>",
 		"list",
 	} {
 		if !strings.Contains(stdout, want) {

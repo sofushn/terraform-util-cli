@@ -349,12 +349,22 @@ func TestListProviderDocsReturnsSupportedDocs(t *testing.T) {
 			category := r.URL.Query().Get("filter[category]")
 			page := r.URL.Query().Get("page[number]")
 			switch {
+			case category == "overview" && page == "1":
+				w.Write([]byte(`{"data":[{"type":"provider-docs","id":"overview-1","attributes":{"category":"overview","language":"hcl","path":"website/docs/index.html.markdown","slug":"index","title":"overview"}}]}`))
+			case category == "guides" && page == "1":
+				w.Write([]byte(`{"data":[{"type":"provider-docs","id":"guide-1","attributes":{"category":"guides","language":"hcl","path":"website/docs/guides/custom-service-endpoints.html.markdown","slug":"custom-service-endpoints","title":"Terraform AWS Provider Custom Service Endpoint Configuration"}}]}`))
 			case category == "resources" && page == "1":
 				w.Write([]byte(providerDocsResponseJSON("resources", 100, "resource")))
 			case category == "resources" && page == "2":
 				w.Write([]byte(providerDocsResponseJSON("resources", 1, "tail")))
 			case category == "data-sources" && page == "1":
 				w.Write([]byte(`{"data":[{"type":"provider-docs","id":"data-1","attributes":{"category":"data-sources","language":"hcl","path":"website/docs/d/ami.html.markdown","slug":"ami","title":"ami"}}]}`))
+			case category == "ephemeral-resources" && page == "1":
+				w.Write([]byte(`{"data":[{"type":"provider-docs","id":"ephemeral-1","attributes":{"category":"ephemeral-resources","language":"hcl","path":"website/docs/ephemeral-resources/ecr_authorization_token.html.markdown","slug":"ecr_authorization_token","title":"ecr_authorization_token"}}]}`))
+			case category == "actions" && page == "1":
+				w.Write([]byte(`{"data":[{"type":"provider-docs","id":"action-1","attributes":{"category":"actions","language":"hcl","path":"website/docs/actions/cloudfront_create_invalidation.html.markdown","slug":"cloudfront_create_invalidation","title":"cloudfront_create_invalidation"}}]}`))
+			case category == "functions" && page == "1":
+				w.Write([]byte(`{"data":[{"type":"provider-docs","id":"function-1","attributes":{"category":"functions","language":"hcl","path":"website/docs/functions/arn_parse.html.markdown","slug":"arn_parse","title":"arn_parse"}}]}`))
 			default:
 				w.Write([]byte(`{"data":[]}`))
 			}
@@ -374,17 +384,32 @@ func TestListProviderDocsReturnsSupportedDocs(t *testing.T) {
 		t.Fatalf("list provider docs: %v", err)
 	}
 
-	if len(items) != 102 {
-		t.Fatalf("expected 102 supported docs, got %d", len(items))
+	if len(items) != 107 {
+		t.Fatalf("expected 107 supported docs, got %d", len(items))
 	}
-	if items[0].Kind != "resource" || items[0].Name != "aws_resource_000" {
+	if items[0].Kind != "overview" || items[0].Name != "provider" {
 		t.Fatalf("unexpected first item: %#v", items[0])
 	}
-	if items[100].Kind != "resource" || items[100].Name != "aws_tail_000" {
-		t.Fatalf("expected second page resource, got %#v", items[100])
+	if items[1].Kind != "guide" || items[1].Name != "custom-service-endpoints" {
+		t.Fatalf("unexpected guide item: %#v", items[1])
 	}
-	if items[101].Kind != "data" || items[101].Name != "aws_ami" {
-		t.Fatalf("unexpected data item: %#v", items[101])
+	if items[2].Kind != "resource" || items[2].Name != "aws_resource_000" {
+		t.Fatalf("unexpected first resource item: %#v", items[2])
+	}
+	if items[102].Kind != "resource" || items[102].Name != "aws_tail_000" {
+		t.Fatalf("expected second page resource, got %#v", items[102])
+	}
+	if items[103].Kind != "data" || items[103].Name != "aws_ami" {
+		t.Fatalf("unexpected data item: %#v", items[103])
+	}
+	if items[104].Kind != "ephemeral" || items[104].Name != "aws_ecr_authorization_token" {
+		t.Fatalf("unexpected ephemeral item: %#v", items[104])
+	}
+	if items[105].Kind != "action" || items[105].Name != "aws_cloudfront_create_invalidation" {
+		t.Fatalf("unexpected action item: %#v", items[105])
+	}
+	if items[106].Kind != "function" || items[106].Name != "arn_parse" {
+		t.Fatalf("unexpected function item: %#v", items[106])
 	}
 }
 
@@ -485,6 +510,107 @@ func TestGetProviderDocFetchesContentAndSource(t *testing.T) {
 	}
 	if page.Website != "https://registry.terraform.io/providers/hashicorp/aws/6.46.0/docs/resources/vpc" {
 		t.Fatalf("unexpected website: %q", page.Website)
+	}
+}
+
+func TestGetProviderDocFetchesNewDocKinds(t *testing.T) {
+	tests := []struct {
+		name           string
+		kind           string
+		docName        string
+		wantCategory   string
+		wantSlugFilter string
+		responseSlug   string
+		responseTitle  string
+		wantName       string
+	}{
+		{
+			name:           "guide",
+			kind:           "guide",
+			docName:        "custom-service-endpoints",
+			wantCategory:   "guides",
+			wantSlugFilter: "custom-service-endpoints",
+			responseSlug:   "custom-service-endpoints",
+			responseTitle:  "Terraform AWS Provider Custom Service Endpoint Configuration",
+			wantName:       "custom-service-endpoints",
+		},
+		{
+			name:           "overview",
+			kind:           "overview",
+			docName:        "provider",
+			wantCategory:   "overview",
+			wantSlugFilter: "provider,index",
+			responseSlug:   "index",
+			responseTitle:  "overview",
+			wantName:       "provider",
+		},
+		{
+			name:           "ephemeral normalized",
+			kind:           "ephemeral",
+			docName:        "aws_ecr_authorization_token",
+			wantCategory:   "ephemeral-resources",
+			wantSlugFilter: "aws_ecr_authorization_token,ecr_authorization_token",
+			responseSlug:   "ecr_authorization_token",
+			responseTitle:  "ecr_authorization_token",
+			wantName:       "aws_ecr_authorization_token",
+		},
+		{
+			name:           "action raw",
+			kind:           "action",
+			docName:        "cloudfront_create_invalidation",
+			wantCategory:   "actions",
+			wantSlugFilter: "cloudfront_create_invalidation,aws_cloudfront_create_invalidation",
+			responseSlug:   "cloudfront_create_invalidation",
+			responseTitle:  "cloudfront_create_invalidation",
+			wantName:       "aws_cloudfront_create_invalidation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/v2/providers/hashicorp/aws":
+					w.Write([]byte(`{
+						"included": [
+							{"type":"provider-versions","id":"97303","attributes":{"version":"6.46.0","tag":"v6.46.0"}}
+						]
+					}`))
+				case "/v2/provider-docs":
+					if got := r.URL.Query().Get("filter[category]"); got != tt.wantCategory {
+						t.Fatalf("unexpected category: %q", got)
+					}
+					if got := r.URL.Query().Get("filter[slug]"); got != tt.wantSlugFilter {
+						t.Fatalf("unexpected slug candidates: %q", got)
+					}
+					fmt.Fprintf(w, `{
+						"data": [
+							{"type":"provider-docs","id":"123","attributes":{"category":%q,"language":"hcl","path":"website/docs/example.html.markdown","slug":%q,"title":%q}}
+						]
+					}`, tt.wantCategory, tt.responseSlug, tt.responseTitle)
+				case "/v2/provider-docs/123":
+					fmt.Fprintf(w, `{
+						"data": {"type":"provider-docs","id":"123","attributes":{"category":%q,"content":"# Doc\n","language":"hcl","path":"website/docs/example.html.markdown","slug":%q,"title":%q}}
+					}`, tt.wantCategory, tt.responseSlug, tt.responseTitle)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			client := NewClientForBaseURL(server.URL)
+			page, err := client.GetProviderDoc(context.Background(), Provider{
+				Namespace:     "hashicorp",
+				Name:          "aws",
+				LatestVersion: "6.46.0",
+			}, tt.kind, tt.docName)
+			if err != nil {
+				t.Fatalf("get provider doc: %v", err)
+			}
+			if page.Kind != tt.kind || page.Name != tt.wantName || page.Content != "# Doc" {
+				t.Fatalf("unexpected page: %#v", page)
+			}
+		})
 	}
 }
 

@@ -166,9 +166,9 @@ func parseDocsPath(path string) (string, string, error) {
 		return "", "", fmt.Errorf("docs path must start with data/, resource/, or function/")
 	}
 	switch kind {
-	case "data", "resource", "function":
+	case "overview", "guide", "resource", "data", "ephemeral", "action", "function":
 		return kind, name, nil
 	default:
-		return "", "", fmt.Errorf("docs path must start with data/, resource/, or function/")
+		return "", "", fmt.Errorf("docs path must start with overview/, guide/, resource/, data/, ephemeral/, action/, or function/")
 	}
 }

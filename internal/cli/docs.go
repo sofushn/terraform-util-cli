@@ -14,8 +14,15 @@ func newDocsCommand(opts *options, svc service) *cobra.Command {
 	docsOpts := &docsFlags{}
 
 	cmd := &cobra.Command{
-		Use:     "docs <provider> <data/name|resource/name|function/name>|<module>",
+		Use:     "docs <provider> <path>",
 		Short:   "List or fetch provider and module docs",
+		Example: strings.Join([]string{
+			"  terraform-util docs list aws",
+			"  terraform-util docs list aws resource/",
+			"  terraform-util docs aws resource/aws_vpc",
+			"  terraform-util docs aws guide/custom-service-endpoints",
+			"  terraform-util docs terraform-aws-modules/vpc/aws",
+		}, "\n"),
 		GroupID: "registry",
 		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -26,7 +33,7 @@ func newDocsCommand(opts *options, svc service) *cobra.Command {
 
 			if len(args) == 1 {
 				if !isModuleAddress(args[0]) {
-					return fmt.Errorf("provider docs require a docs path: data/name, resource/name, or function/name")
+					return fmt.Errorf("provider docs require a docs path: overview/name, guide/name, resource/name, data/name, ephemeral/name, action/name, or function/name")
 				}
 				page, err := svc.GetModuleDoc(cmd.Context(), args[0], appDocsOpts)
 				if err != nil {
@@ -43,7 +50,7 @@ func newDocsCommand(opts *options, svc service) *cobra.Command {
 				return fmt.Errorf("module docs do not accept provider docs paths")
 			}
 			if !isDocsPath(args[1]) {
-				return fmt.Errorf("docs path must start with data/, resource/, or function/")
+				return fmt.Errorf("docs path must start with overview/, guide/, resource/, data/, ephemeral/, action/, or function/")
 			}
 
 			appDocsOpts.CWD = currentWorkingDirectory()
@@ -118,7 +125,7 @@ func currentWorkingDirectory() string {
 }
 
 func isDocsPath(path string) bool {
-	for _, prefix := range []string{"data/", "resource/", "function/"} {
+	for _, prefix := range []string{"overview/", "guide/", "resource/", "data/", "ephemeral/", "action/", "function/"} {
 		if strings.HasPrefix(path, prefix) && len(path) > len(prefix) {
 			return true
 		}

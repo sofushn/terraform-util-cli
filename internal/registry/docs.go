@@ -61,7 +61,7 @@ func (c Client) StreamProviderDocs(ctx context.Context, provider Provider, yield
 }
 
 func (c Client) streamProviderDocsForVersion(ctx context.Context, versionID string, providerName string, yield func([]DocItem) error) error {
-	for _, category := range []string{"resources", "data-sources", "functions"} {
+	for _, category := range providerDocCategories() {
 		if err := c.streamProviderDocsForCategory(ctx, versionID, providerName, category, yield); err != nil {
 			return err
 		}
@@ -164,7 +164,7 @@ func (c Client) findProviderDoc(ctx context.Context, versionID string, providerN
 		return v2ProviderDocData{}, err
 	}
 
-	slugs := candidateSlugs(providerName, name)
+	slugs := candidateSlugs(providerName, kind, name)
 	endpoint, err := url.Parse(c.BaseURL + "/v2/provider-docs")
 	if err != nil {
 		return v2ProviderDocData{}, err
@@ -271,23 +271,39 @@ func docItemFromAttributes(providerName string, attrs v2ProviderDocAttributes) (
 
 func docsCategory(kind string) (string, error) {
 	switch kind {
+	case "overview":
+		return "overview", nil
+	case "guide":
+		return "guides", nil
 	case "resource":
 		return "resources", nil
 	case "data":
 		return "data-sources", nil
+	case "ephemeral":
+		return "ephemeral-resources", nil
+	case "action":
+		return "actions", nil
 	case "function":
 		return "functions", nil
 	default:
-		return "", fmt.Errorf("unsupported docs kind %q", kind)
+		return "", fmt.Errorf("unsupported docs kind %q; supported kinds are overview, guide, resource, data, ephemeral, action, and function", kind)
 	}
 }
 
 func docsKind(category string) (string, bool) {
 	switch category {
+	case "overview":
+		return "overview", true
+	case "guides":
+		return "guide", true
 	case "resources":
 		return "resource", true
 	case "data-sources":
 		return "data", true
+	case "ephemeral-resources":
+		return "ephemeral", true
+	case "actions":
+		return "action", true
 	case "functions":
 		return "function", true
 	default:
@@ -296,17 +312,24 @@ func docsKind(category string) (string, bool) {
 }
 
 func canonicalDocName(providerName string, kind string, title string, slug string) string {
+	if kind == "overview" && slug == "index" {
+		return "provider"
+	}
+	if kind == "overview" || kind == "guide" {
+		return slug
+	}
+
 	name := strings.TrimSpace(title)
 	if name == "" {
 		name = slug
 	}
-	if (kind == "resource" || kind == "data") && name != providerName && !strings.HasPrefix(name, providerName+"_") {
+	if isProviderPrefixedDocKind(kind) && name != providerName && !strings.HasPrefix(name, providerName+"_") {
 		return providerName + "_" + name
 	}
 	return name
 }
 
-func candidateSlugs(providerName string, name string) []string {
+func candidateSlugs(providerName string, kind string, name string) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(value string) {
@@ -319,7 +342,15 @@ func candidateSlugs(providerName string, name string) []string {
 	}
 
 	add(name)
-	add(strings.TrimPrefix(name, providerName+"_"))
+	if kind == "overview" && name == "provider" {
+		add("index")
+	}
+	if isProviderPrefixedDocKind(kind) {
+		add(strings.TrimPrefix(name, providerName+"_"))
+		if !strings.HasPrefix(name, providerName+"_") {
+			add(providerName + "_" + name)
+		}
+	}
 	return out
 }
 
@@ -368,14 +399,43 @@ func stripFrontMatter(content string) string {
 
 func docKindRank(kind string) int {
 	switch kind {
-	case "resource":
+	case "overview":
 		return 0
-	case "data":
+	case "guide":
 		return 1
-	case "function":
+	case "resource":
 		return 2
-	default:
+	case "data":
 		return 3
+	case "ephemeral":
+		return 4
+	case "action":
+		return 5
+	case "function":
+		return 6
+	default:
+		return 7
+	}
+}
+
+func providerDocCategories() []string {
+	return []string{
+		"overview",
+		"guides",
+		"resources",
+		"data-sources",
+		"ephemeral-resources",
+		"actions",
+		"functions",
+	}
+}
+
+func isProviderPrefixedDocKind(kind string) bool {
+	switch kind {
+	case "resource", "data", "ephemeral", "action":
+		return true
+	default:
+		return false
 	}
 }
 
